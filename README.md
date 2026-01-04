@@ -1,5 +1,18 @@
 # AI-Powered Inventory Management System
 
+<img width="1901" height="943" alt="image" src="https://github.com/user-attachments/assets/4db42df3-7f3d-45b4-b676-07b0f468a10d" />
+<img width="1907" height="942" alt="image" src="https://github.com/user-attachments/assets/2c3b270d-5b50-48f8-9395-5a5fbaa9bc0a" />
+<img width="1894" height="919" alt="image" src="https://github.com/user-attachments/assets/a806210c-ce87-48ab-87b1-7bb2ebd868f5" />
+<img width="1905" height="880" alt="image" src="https://github.com/user-attachments/assets/0c049ef3-fc13-4aaf-b988-5add59ce5ebf" />
+<img width="1903" height="944" alt="image" src="https://github.com/user-attachments/assets/fa594d73-3edf-439e-a843-9741ed0362fe" />
+<img width="1899" height="944" alt="image" src="https://github.com/user-attachments/assets/e218d752-8eea-44b4-8084-88f5d18f3c0c" />
+<img width="1899" height="939" alt="image" src="https://github.com/user-attachments/assets/5e6b6884-ad2c-467f-9f71-965f1ed009b2" />
+<img width="1904" height="940" alt="image" src="https://github.com/user-attachments/assets/cc1e5903-7afc-4939-9419-339ff7395b50" />
+<img width="1902" height="904" alt="image" src="https://github.com/user-attachments/assets/995a3f19-c307-4e80-bcfc-31b2ed5c1069" />
+<img width="1903" height="942" alt="image" src="https://github.com/user-attachments/assets/e9c3ceec-53bb-404a-839e-942ccccb54c0" />
+
+---
+
 ### Snowflake Setup
 
 **What**: Create the backend infrastructure  
@@ -181,3 +194,6 @@ Ctrl+C
 
 **Issue**: Tasks not running  
 **Fix**: `ALTER TASK TASK_HOURLY_ALERT_CHECK RESUME;`
+
+--
+
