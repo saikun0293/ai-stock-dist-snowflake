@@ -117,15 +117,15 @@ st.markdown("""
 
 # Import connectors
 try:
-    from streamlit_app.utils.snowflake_connector import (
+    from utils.snowflake_connector import (
         get_connection, query_stock_health, query_active_alerts,
         query_reorder_recommendations, query_location_performance,
         query_category_heatmap, export_reorder_list, log_export
     )
     USE_SNOWFLAKE = True
-except:
+except Exception as e:
     USE_SNOWFLAKE = False
-    st.warning("⚠️ Snowflake connector not available. Using demo mode.")
+    st.warning(f"⚠️ Snowflake connector not available. Using demo mode. Error: {e}")
 
 def load_data_from_snowflake():
     """Load data from Snowflake"""
@@ -313,7 +313,7 @@ def display_heatmap(df, heatmap_df):
                 font=dict(size=12)
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         
         else:
             # Individual items scatter
@@ -329,7 +329,7 @@ def display_heatmap(df, heatmap_df):
             )
             
             fig.update_layout(height=500)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     
     # Stock distribution
     st.markdown("### 📊 Stock Distribution")
@@ -349,7 +349,7 @@ def display_heatmap(df, heatmap_df):
                 'HEALTHY': '#4caf50'
             }
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     with col2:
         category_counts = df.groupby('CATEGORY')['STOCK_STATUS'].value_counts().unstack(fill_value=0)
@@ -364,7 +364,7 @@ def display_heatmap(df, heatmap_df):
                 'HEALTHY': '#4caf50'
             }
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 def display_alerts(alerts_df):
     """Display active alerts"""
@@ -479,7 +479,7 @@ def display_reorder_list(reorder_df, conn, location_filter, category_filter):
         display_cols.append('SUPPLIER_NAME')
     
     available_cols = [col for col in display_cols if col in reorder_df.columns]
-    st.dataframe(reorder_df[available_cols].head(100), use_container_width=True, height=400)
+    st.dataframe(reorder_df[available_cols].head(100), width="stretch", height=400)
     
     # Export section
     st.markdown("### 📥 Export Reorder List")
@@ -581,7 +581,7 @@ def display_analytics(stock_df, location_df):
             height=400
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     # ABC Analysis
     st.markdown("### 🎯 ABC Analysis")
@@ -596,7 +596,7 @@ def display_analytics(stock_df, location_df):
             title="Items by ABC Classification",
             color_discrete_sequence=px.colors.sequential.Blues_r
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     with col2:
         # Risk by ABC class
@@ -609,7 +609,7 @@ def display_analytics(stock_df, location_df):
             color='RISK_SCORE',
             color_continuous_scale='RdYlGn_r'
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     # Top issues
     st.markdown("### ⚠️ Top 10 Critical Items")
@@ -618,7 +618,7 @@ def display_analytics(stock_df, location_df):
         ['SKU_NAME', 'LOCATION', 'CATEGORY', 'QUANTITY_ON_HAND', 'REORDER_POINT', 'DAYS_UNTIL_STOCKOUT', 'RISK_SCORE']
     ]
     
-    st.dataframe(critical_items, use_container_width=True)
+    st.dataframe(critical_items, width="stretch")
 
 if __name__ == "__main__":
     main()

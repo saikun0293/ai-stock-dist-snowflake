@@ -55,7 +55,7 @@ def display_trends(full_df, filtered_df):
                 yaxis_title="Total Stock",
                 hovermode='x unified'
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             
             # Consumption trends
             if 'consumption' in recent_df.columns:
@@ -75,7 +75,7 @@ def display_trends(full_df, filtered_df):
                     yaxis_title="Consumption",
                     hovermode='x unified'
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
     
     # Location comparison
     st.subheader("🏥 Location Comparison")
@@ -96,7 +96,7 @@ def display_trends(full_df, filtered_df):
             color='current_stock',
             color_continuous_scale='Blues'
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     with col2:
         # Stock status by location
@@ -117,7 +117,7 @@ def display_trends(full_df, filtered_df):
             barmode='stack'
         )
         fig.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     # Item-level analysis
     st.subheader("🔍 Item-Level Analysis")
@@ -171,7 +171,7 @@ def display_trends(full_df, filtered_df):
             xaxis_tickangle=-45
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     # Summary statistics
     st.subheader("📊 Summary Statistics")
