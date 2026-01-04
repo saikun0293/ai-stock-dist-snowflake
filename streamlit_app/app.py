@@ -46,26 +46,46 @@ st.markdown("""
     
     /* Critical alert styling */
     .critical-alert {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        padding: 15px;
-        border-radius: 10px;
+        background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+        padding: 12px 16px;
+        border-radius: 8px;
         color: white;
-        margin: 10px 0;
-        animation: pulse 2s infinite;
+        margin: 8px 0;
     }
     
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.8; }
+    .critical-alert h4 {
+        margin: 0 0 6px 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+    
+    .critical-alert p {
+        margin: 4px 0;
+        font-size: 0.9rem;
+        line-height: 1.4;
     }
     
     /* Warning alert */
     .warning-alert {
-        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-        padding: 15px;
-        border-radius: 10px;
-        color: #333;
-        margin: 10px 0;
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        padding: 12px 16px;
+        border-radius: 8px;
+        color: white;
+        margin: 8px 0;
+        border-left: 4px solid #92400e;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .warning-alert h4 {
+        margin: 0 0 6px 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+    
+    .warning-alert p {
+        margin: 4px 0;
+        font-size: 0.9rem;
+        line-height: 1.4;
     }
     
     /* Success message */
@@ -225,27 +245,27 @@ def main():
         st.markdown(f"**Showing:** {len(filtered_df)} items")
     
     # Main Dashboard
-    # KPI Metrics Row
+    # KPI Metrics Row (based on filtered data)
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        critical_count = len(stock_df[stock_df['STOCK_STATUS'] == 'CRITICAL'])
+        critical_count = len(filtered_df[filtered_df['STOCK_STATUS'] == 'CRITICAL'])
         st.metric("🔴 Critical Items", critical_count, delta=f"-{critical_count} urgent", delta_color="inverse")
     
     with col2:
-        low_count = len(stock_df[stock_df['STOCK_STATUS'] == 'LOW'])
+        low_count = len(filtered_df[filtered_df['STOCK_STATUS'] == 'LOW'])
         st.metric("🟡 Low Stock", low_count, delta=f"{low_count} need attention")
     
     with col3:
-        avg_days = stock_df[stock_df['DAYS_UNTIL_STOCKOUT'] < 999]['DAYS_UNTIL_STOCKOUT'].mean()
+        avg_days = filtered_df[filtered_df['DAYS_UNTIL_STOCKOUT'] < 999]['DAYS_UNTIL_STOCKOUT'].mean()
         st.metric("📅 Avg Days to Stockout", f"{avg_days:.1f}", delta=f"Monitor closely")
     
     with col4:
-        total_value = stock_df['QUANTITY_ON_HAND'].sum() * stock_df['UNIT_COST_USD'].mean()
+        total_value = filtered_df['QUANTITY_ON_HAND'].sum() * filtered_df['UNIT_COST_USD'].mean()
         st.metric("💰 Total Inventory Value", f"${total_value:,.0f}")
     
     with col5:
-        health_score = 100 - (critical_count + low_count) / len(stock_df) * 100
+        health_score = 100 - (critical_count + low_count) / len(filtered_df) * 100 if len(filtered_df) > 0 else 0
         st.metric("❤️ Overall Health Score", f"{health_score:.0f}%", delta=f"{health_score:.0f}% healthy")
     
     st.markdown("---")
@@ -253,17 +273,36 @@ def main():
     # Tab Navigation
     tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Heatmap View", "🚨 Active Alerts", "📋 Reorder List", "📊 Analytics"])
     
+    # Apply filters to all dataframes
+    filtered_alerts_df = alerts_df.copy() if alerts_df is not None else filtered_df[filtered_df['RISK_SCORE'] >= 70].copy()
+    if selected_location != "All" and len(filtered_alerts_df) > 0:
+        filtered_alerts_df = filtered_alerts_df[filtered_alerts_df['LOCATION'] == selected_location]
+    if selected_category != "All" and len(filtered_alerts_df) > 0:
+        filtered_alerts_df = filtered_alerts_df[filtered_alerts_df['CATEGORY'] == selected_category]
+    
+    filtered_reorder_df = reorder_df.copy() if reorder_df is not None else filtered_df.copy()
+    if selected_location != "All" and len(filtered_reorder_df) > 0:
+        filtered_reorder_df = filtered_reorder_df[filtered_reorder_df['LOCATION'] == selected_location]
+    if selected_category != "All" and len(filtered_reorder_df) > 0:
+        filtered_reorder_df = filtered_reorder_df[filtered_reorder_df['CATEGORY'] == selected_category]
+    
+    filtered_heatmap_df = heatmap_df.copy() if heatmap_df is not None else filtered_df.copy()
+    if selected_location != "All" and len(filtered_heatmap_df) > 0:
+        filtered_heatmap_df = filtered_heatmap_df[filtered_heatmap_df['LOCATION'] == selected_location]
+    if selected_category != "All" and len(filtered_heatmap_df) > 0:
+        filtered_heatmap_df = filtered_heatmap_df[filtered_heatmap_df['CATEGORY'] == selected_category]
+    
     with tab1:
-        display_heatmap(filtered_df, heatmap_df if heatmap_df is not None else filtered_df)
+        display_heatmap(filtered_df, filtered_heatmap_df)
     
     with tab2:
-        display_alerts(alerts_df if alerts_df is not None else filtered_df[filtered_df['RISK_SCORE'] >= 70])
+        display_alerts(filtered_alerts_df)
     
     with tab3:
-        display_reorder_list(reorder_df if reorder_df is not None else filtered_df, conn, selected_location, selected_category)
+        display_reorder_list(filtered_reorder_df, conn, selected_location, selected_category)
     
     with tab4:
-        display_analytics(stock_df, location_df)
+        display_analytics(filtered_df, location_df)
 
 def display_heatmap(df, heatmap_df):
     """Display interactive heatmap"""
@@ -418,13 +457,13 @@ def display_alerts(alerts_df):
         else:
             alert_class = "success-message"
         
+        days_text = f"{alert.get('DAYS_UNTIL_STOCKOUT', 'N/A'):.1f}" if isinstance(alert.get('DAYS_UNTIL_STOCKOUT'), (int, float)) and alert.get('DAYS_UNTIL_STOCKOUT', 999) < 999 else 'N/A'
+        
         st.markdown(f"""
         <div class="{alert_class}">
-            <h4>🚨 {alert['SKU_NAME']}</h4>
-            <p><b>Location:</b> {alert['LOCATION']} | <b>Category:</b> {alert['CATEGORY']}</p>
-            <p><b>Current Stock:</b> {alert['QUANTITY_ON_HAND']:.0f} | <b>Reorder Point:</b> {alert['REORDER_POINT']:.0f} | 
-               <b>Days to Stockout:</b> {alert.get('DAYS_UNTIL_STOCKOUT', 'N/A')}</p>
-            <p><b>Priority:</b> {priority}</p>
+            <h4>🚨 {alert['SKU_NAME']} <span style="float:right; font-size:0.85rem; opacity:0.9;">{priority}</span></h4>
+            <p><b>{alert['LOCATION']}</b> • {alert['CATEGORY']} • ABC Class: {alert.get('ABC_CLASS', 'N/A')}</p>
+            <p>Stock: <b>{alert['QUANTITY_ON_HAND']:.0f}</b> / Reorder: {alert['REORDER_POINT']:.0f} / Safety: {alert.get('SAFETY_STOCK', 'N/A'):.0f} • Days left: <b>{days_text}</b></p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -599,16 +638,30 @@ def display_analytics(stock_df, location_df):
         st.plotly_chart(fig, width="stretch")
     
     with col2:
-        # Risk by ABC class
+        # Risk by ABC class (higher score = more risk)
         abc_risk = stock_df.groupby('ABC_CLASS')['RISK_SCORE'].mean().reset_index()
+        abc_risk = abc_risk.sort_values('ABC_CLASS')  # Sort A, B, C
+        
         fig = px.bar(
             abc_risk,
             x='ABC_CLASS',
             y='RISK_SCORE',
             title="Average Risk Score by ABC Class",
             color='RISK_SCORE',
-            color_continuous_scale='RdYlGn_r'
+            color_continuous_scale='RdYlGn_r',  # Red=high risk, Green=low risk
+            labels={'RISK_SCORE': 'Avg Risk Score', 'ABC_CLASS': 'ABC Class'},
+            text='RISK_SCORE'
         )
+        
+        # Format the text on bars
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        
+        # Set y-axis range from 0-100
+        fig.update_layout(
+            yaxis_range=[0, 100],
+            showlegend=False
+        )
+        
         st.plotly_chart(fig, width="stretch")
     
     # Top issues
