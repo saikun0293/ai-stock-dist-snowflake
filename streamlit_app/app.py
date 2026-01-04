@@ -61,7 +61,7 @@ def load_data():
             forecast_df = snowflake_connector.query_forecast_analysis(conn)
         else:
             raise Exception("No Snowflake connection")
-    except:
+    except Exception as e:
         # Fallback to local demo data
         st.warning("Using demo data. Connect to Snowflake for live data.")
         inventory_df, alerts_df, forecast_df = data_processing.load_demo_data()

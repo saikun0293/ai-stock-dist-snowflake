@@ -49,19 +49,26 @@ def display_inventory_heatmap(df):
     display_cols = ['location', 'category', 'item_name', 'current_stock', 
                     'max_stock', 'stock_percentage', 'stock_status', 'days_until_stockout']
     
-    # Color code the status column
-    def highlight_status(row):
-        if row['stock_status'] == 'CRITICAL':
-            return ['background-color: #ff4b4b'] * len(row)
-        elif row['stock_status'] == 'LOW':
-            return ['background-color: #ffa500'] * len(row)
-        elif row['stock_status'] == 'MODERATE':
-            return ['background-color: #ffeb3b'] * len(row)
-        else:
-            return ['background-color: #4caf50'] * len(row)
-    
-    styled_df = df[display_cols].style.apply(highlight_status, axis=1)
-    st.dataframe(styled_df, use_container_width=True, height=400)
+    # For better performance with large datasets, use conditional display instead of styling
+    # Only apply styling if dataset is reasonably sized
+    if len(df) <= 1000:
+        # Color code the status column
+        def highlight_status(row):
+            if row['stock_status'] == 'CRITICAL':
+                return ['background-color: #ff4b4b'] * len(row)
+            elif row['stock_status'] == 'LOW':
+                return ['background-color: #ffa500'] * len(row)
+            elif row['stock_status'] == 'MODERATE':
+                return ['background-color: #ffeb3b'] * len(row)
+            else:
+                return ['background-color: #4caf50'] * len(row)
+        
+        styled_df = df[display_cols].style.apply(highlight_status, axis=1)
+        st.dataframe(styled_df, use_container_width=True, height=400)
+    else:
+        # For large datasets, display without styling for better performance
+        st.dataframe(df[display_cols], use_container_width=True, height=400)
+        st.info("💡 Tip: Use filters to reduce dataset size for color-coded display")
 
 def display_status_heatmap(df, pivot_col):
     """Display heatmap colored by stock status"""

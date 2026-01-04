@@ -91,7 +91,7 @@ def query_forecast_analysis(conn) -> pd.DataFrame:
 
 def query_stock_trends(conn, location: str, item_name: str, days: int = 30) -> pd.DataFrame:
     """Query historical stock trends for a specific item"""
-    query = f"""
+    query = """
         SELECT 
             snapshot_date,
             current_stock,
@@ -99,12 +99,13 @@ def query_stock_trends(conn, location: str, item_name: str, days: int = 30) -> p
             stock_7day_avg,
             consumption_7day_avg
         FROM V_STOCK_TRENDS
-        WHERE location = '{location}'
-          AND item_name = '{item_name}'
-          AND snapshot_date >= DATEADD(day, -{days}, CURRENT_DATE())
+        WHERE location = %(location)s
+          AND item_name = %(item_name)s
+          AND snapshot_date >= DATEADD(day, %(days)s, CURRENT_DATE())
         ORDER BY snapshot_date
     """
-    return pd.read_sql(query, conn)
+    params = {'location': location, 'item_name': item_name, 'days': -days}
+    return pd.read_sql(query, conn, params=params)
 
 def query_location_summary(conn) -> pd.DataFrame:
     """Query location-wise summary"""
