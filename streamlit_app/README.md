@@ -104,7 +104,7 @@ streamlit_app/
 │   ├── forecasting.py     # Forecasting component
 │   └── trends.py          # Trends analysis
 └── utils/
-    ├── snowflake_connector.py  # Snowflake connection
+    ├── connector.py  # Snowflake connection
     └── data_processing.py      # Data utilities
 ```
 
@@ -145,12 +145,12 @@ Edit `.streamlit/config.toml` to customize colors and appearance.
 Edit `.streamlit/secrets.toml` with your Snowflake credentials:
 
 ```toml
-snowflake_user = "your_username"
-snowflake_password = "your_password"
-snowflake_account = "your_account"
-snowflake_warehouse = "COMPUTE_WH"
-snowflake_database = "INVENTORY_APP_DB"
-snowflake_schema = "DATA_SCHEMA"
+user = "your_username"
+password = "your_password"
+account = "your_account"
+warehouse = "COMPUTE_WH"
+database = "INVENTORY_APP_DB"
+schema = "DATA_SCHEMA"
 ```
 
 ## Deployment
