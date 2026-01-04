@@ -1,19 +1,11 @@
-# 🗺️ Complete Project Roadmap
+# Inventory Management
 
-## 📍 Where You Are Now
-
-✅ **Database & Data**: You have `inventory_app_db` with `inventory_cleaned` table containing your data  
-✅ **GitHub Project**: All code is in your repository  
-🎯 **Goal**: Create heatmaps, alerts, and reorder recommendations for your hackathon
-
----
-
-## 🚀 3-Step Launch Plan
-
-### 🔷 PHASE 1: Snowflake Setup (20 minutes)
+### Snowflake Setup
 
 **What**: Create the backend infrastructure  
 **Where**: Snowflake Web UI → Worksheets
+
+First create db and import data following db_setup.sql
 
 **Execute in this order:**
 
@@ -44,7 +36,7 @@ SELECT COUNT(*) FROM DT_STOCK_HEALTH; -- Should return > 0
 
 ---
 
-### 🔷 PHASE 2: Dashboard Setup (10 minutes)
+### Dashboard Setup
 
 **What**: Configure and launch the Streamlit dashboard  
 **Where**: Your local machine / terminal
@@ -54,12 +46,12 @@ SELECT COUNT(*) FROM DT_STOCK_HEALTH; -- Should return > 0
 Create file: `streamlit_app/.streamlit/secrets.toml`
 
 ```toml
-snowflake_user = "YOUR_USERNAME"
-snowflake_password = "YOUR_PASSWORD"
-snowflake_account = "YOUR_ACCOUNT"  # e.g., "abc12345.us-east-1"
-snowflake_warehouse = "COMPUTE_WH"
-snowflake_database = "inventory_app_db"
-snowflake_schema = "data_schema"
+user = "YOUR_USERNAME"
+password = "YOUR_PASSWORD"
+account = "YOUR_ACCOUNT"  # e.g., "abc12345.us-east-1"
+warehouse = "COMPUTE_WH"
+database = "inventory_app_db"
+schema = "data_schema"
 ```
 
 **Step 2.2: Install dependencies**
@@ -79,34 +71,6 @@ streamlit run app.py
 ✅ Dashboard opens at http://localhost:8501  
 ✅ Shows your actual data from Snowflake  
 ✅ 4 tabs visible: Heatmap, Alerts, Reorder List, Analytics
-
----
-
-### 🔷 PHASE 3: Demo Preparation (15 minutes)
-
-**What**: Prepare for your hackathon presentation  
-**Where**: Dashboard + PowerPoint/Slides
-
-**Checklist:**
-
-- [ ] Take screenshots of all 4 dashboard tabs
-- [ ] Export a sample CSV reorder list
-- [ ] Practice the 5-minute demo (use `DEMO_SCRIPT.md`)
-- [ ] Prepare backup slides (in case of connectivity issues)
-- [ ] Test all interactive features (filters, exports, charts)
-
-**Optional: Create Dramatic Demo Data**
-
-```sql
--- In Snowflake, create some critical situations for visual impact:
-UPDATE inventory_cleaned
-SET QUANTITY_ON_HAND = 5
-WHERE SKU_ID IN ('SKU0050', 'SKU0075', 'SKU0100')
-  AND CATEGORY = 'Medicines';
-
--- Refresh dynamic tables
-ALTER DYNAMIC TABLE DT_STOCK_HEALTH REFRESH;
-```
 
 ---
 
@@ -185,37 +149,6 @@ ALTER DYNAMIC TABLE DT_STOCK_HEALTH REFRESH;
 | **"Use Tasks"**                    | ✅ 3 tasks (hourly/daily/weekly)                                                                  | `streams_tasks.sql`                                                                      |
 | **"Streamlit dashboard"**          | ✅ 4-tab responsive dashboard with animations                                                     | `app.py`                                                                                 |
 
----
-
-## 📝 File Quick Reference
-
-### Must Execute (in order):
-
-1. `snowflake/views_heatmap.sql` ← Creates views
-2. `snowflake/dynamic_tables.sql` ← Creates auto-refresh tables
-3. `snowflake/streams_tasks.sql` ← Creates automation
-
-### Must Run (on your machine):
-
-1. `streamlit_app/app.py` ← Main dashboard
-
-### Must Configure:
-
-1. `streamlit_app/.streamlit/secrets.toml` ← Snowflake credentials
-
-### Read Before Demo:
-
-1. `QUICKSTART.md` ← 15-min setup guide
-2. `DEMO_SCRIPT.md` ← Presentation script
-3. `IMPLEMENTATION_SUMMARY.md` ← What we built
-
-### Reference:
-
-1. `snowflake/main_setup.sql` ← Step-by-step verification
-2. `requirements_updated.txt` ← Python packages
-
----
-
 ## ⚡ Quick Command Cheat Sheet
 
 ### Snowflake Commands
@@ -254,69 +187,6 @@ Ctrl+C
 
 ---
 
-## 🏆 Success Criteria
-
-Before your demo, verify these work:
-
-- [ ] Snowflake: Dynamic tables have data (`SELECT COUNT(*) FROM DT_STOCK_HEALTH` returns > 0)
-- [ ] Dashboard: Opens without errors at http://localhost:8501
-- [ ] Tab 1: Heatmap shows your locations and categories
-- [ ] Tab 2: Alerts page shows items below reorder point
-- [ ] Tab 3: Can export CSV/Excel reorder list
-- [ ] Tab 4: Analytics charts display correctly
-- [ ] Filters: Location/Category dropdowns work
-- [ ] Performance: Dashboard loads in < 5 seconds
-
----
-
-## 🎬 Demo Day Checklist
-
-**1 Day Before:**
-
-- [ ] Run all SQL scripts
-- [ ] Verify dashboard works
-- [ ] Take screenshots
-- [ ] Practice demo script (aim for 5 minutes)
-
-**1 Hour Before:**
-
-- [ ] Test internet connection
-- [ ] Start dashboard (`streamlit run app.py`)
-- [ ] Open Snowflake worksheet as backup
-- [ ] Have screenshots ready
-
-**During Demo:**
-
-- [ ] Show problem statement (30 sec)
-- [ ] Walk through heatmap (1 min)
-- [ ] Show alerts (1 min)
-- [ ] Export reorder list (1 min)
-- [ ] Explain Snowflake architecture (1 min)
-- [ ] Highlight social impact (30 sec)
-
----
-
-## 🆘 Emergency Backup Plan
-
-If dashboard doesn't work during demo:
-
-**Plan B: Screenshots**
-
-- Have screenshots of all 4 tabs ready
-- Show them in PowerPoint/PDF
-
-**Plan C: Snowflake Direct**
-
-- Show data in Snowflake worksheets
-- Run queries to show dynamic tables
-
-**Plan D: Video Recording**
-
-- Pre-record a 2-minute demo video
-- Play it as backup
-
----
-
 ## 📞 Quick Help
 
 **Issue**: Dynamic tables have no data  
@@ -330,17 +200,3 @@ If dashboard doesn't work during demo:
 
 **Issue**: Tasks not running  
 **Fix**: `ALTER TASK TASK_HOURLY_ALERT_CHECK RESUME;`
-
----
-
-## 🎉 You're Ready!
-
-Follow this roadmap step-by-step:
-
-1. ✅ Execute 3 SQL files in Snowflake (20 min)
-2. ✅ Configure secrets and run dashboard (10 min)
-3. ✅ Practice demo (15 min)
-
-**Total time to launch: 45 minutes**
-
-Good luck with your hackathon! 🚀
