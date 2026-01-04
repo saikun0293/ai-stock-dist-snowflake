@@ -54,7 +54,7 @@ def display_forecasts(forecast_df, inventory_df):
             },
             barmode='stack'
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     with col2:
         # Risk by location
@@ -73,7 +73,7 @@ def display_forecasts(forecast_df, inventory_df):
             barmode='stack'
         )
         fig.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     # High-risk items details
     st.subheader("⚠️ High-Risk Items (Predicted Stockout)")
@@ -143,7 +143,7 @@ def display_forecasts(forecast_df, inventory_df):
             xaxis_tickangle=-45
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     # Model performance
     st.subheader("🎯 Model Performance")
@@ -160,7 +160,7 @@ def display_forecasts(forecast_df, inventory_df):
             labels={'model_accuracy': 'Accuracy (%)'},
             color_discrete_sequence=['#4caf50']
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     with col2:
         # Accuracy by category
@@ -174,4 +174,4 @@ def display_forecasts(forecast_df, inventory_df):
             color='model_accuracy',
             color_continuous_scale='Greens'
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")

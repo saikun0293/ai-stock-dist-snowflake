@@ -47,7 +47,7 @@ def display_alerts(alerts_df, inventory_df):
             color_continuous_scale='Reds'
         )
         fig.update_layout(showlegend=False, xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     with col2:
         # Alerts by category
@@ -59,7 +59,7 @@ def display_alerts(alerts_df, inventory_df):
             title="Alerts by Category",
             color_discrete_sequence=px.colors.sequential.Reds_r
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     # Priority-based alert list
     st.subheader("🚨 Active Alerts")
@@ -125,7 +125,7 @@ def display_alerts(alerts_df, inventory_df):
             xaxis_title="Date",
             yaxis_title="Number of Alerts"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     # Export alerts
     st.subheader("📥 Export Alerts")

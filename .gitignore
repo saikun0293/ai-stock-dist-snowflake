@@ -61,3 +61,5 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+
+secrets.toml

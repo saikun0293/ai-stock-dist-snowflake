@@ -64,10 +64,10 @@ def display_inventory_heatmap(df):
                 return ['background-color: #4caf50'] * len(row)
         
         styled_df = df[display_cols].style.apply(highlight_status, axis=1)
-        st.dataframe(styled_df, use_container_width=True, height=400)
+        st.dataframe(styled_df, width="stretch", height=400)
     else:
         # For large datasets, display without styling for better performance
-        st.dataframe(df[display_cols], use_container_width=True, height=400)
+        st.dataframe(df[display_cols], width="stretch", height=400)
         st.info("💡 Tip: Use filters to reduce dataset size for color-coded display")
 
 def display_status_heatmap(df, pivot_col):
@@ -119,7 +119,7 @@ def display_status_heatmap(df, pivot_col):
         height=600
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 def display_percentage_heatmap(df, pivot_col):
     """Display heatmap colored by stock percentage"""
@@ -157,7 +157,7 @@ def display_percentage_heatmap(df, pivot_col):
         height=600
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 def display_stockout_heatmap(df, pivot_col):
     """Display heatmap colored by days until stockout"""
@@ -198,4 +198,4 @@ def display_stockout_heatmap(df, pivot_col):
         height=600
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
