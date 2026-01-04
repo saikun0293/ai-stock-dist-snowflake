@@ -1,4 +1,17 @@
-# Inventory Management
+# AI-Powered Inventory Management System
+
+## 🧠 **NEW: Snowflake Cortex AI Integration**
+
+This system now includes advanced AI features powered by Snowflake Cortex:
+
+- 💬 **Natural Language Chat** - Ask questions about inventory in plain English
+- 🔍 **Anomaly Detection** - Automatically detect unusual stock patterns
+- 📈 **AI Forecasting** - Predict future demand with ML models
+- 💡 **Auto Insights** - Daily AI-generated recommendations
+
+[**See AI Features Documentation →**](docs/cortex_ai_guide.md)
+
+---
 
 ### Snowflake Setup
 
@@ -17,6 +30,8 @@ First create db and import data following db_setup.sql
 3️⃣ snowflake/dynamic_tables.sql (creates 5 auto-refreshing tables)
    ↓
 4️⃣ snowflake/streams_tasks.sql (creates automation)
+   ↓
+5️⃣ 🧠 snowflake/cortex_ai_setup.sql (OPTIONAL: enables AI features)
 ```
 
 **Expected Results:**

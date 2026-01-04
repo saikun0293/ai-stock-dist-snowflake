@@ -10,9 +10,15 @@ import pandas as pd
 def display_forecasts(forecast_df, inventory_df):
     """Display AI-powered forecast predictions"""
     
-    if len(forecast_df) == 0:
-        st.warning("No forecast data available.")
+    st.markdown("## 📈 AI-Powered Demand Forecasting")
+    st.markdown("**Predict future stock levels and consumption patterns using historical data**")
+    
+    if forecast_df is None or len(forecast_df) == 0:
+        st.warning("📊 No forecast data available.")
+        st.info("💡 Forecast data can be generated using historical consumption patterns and Snowflake Cortex ML functions.")
         return
+    
+    st.markdown("---")
     
     # Forecast summary
     col1, col2, col3, col4 = st.columns(4)

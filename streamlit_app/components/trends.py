@@ -11,9 +11,19 @@ from datetime import datetime, timedelta
 def display_trends(full_df, filtered_df):
     """Display stock trends and analytics"""
     
-    if len(filtered_df) == 0:
+    st.markdown("## 📉 Inventory Trends & Historical Analysis")
+    st.markdown("**Track stock levels, consumption patterns, and location performance over time**")
+    
+    if full_df is None or len(full_df) == 0:
+        st.warning("📉 No trend data available.")
+        st.info("💡 Trend analysis requires historical data over time. Connect to Snowflake with time-series data to enable this feature.")
+        return
+    
+    if filtered_df is None or len(filtered_df) == 0:
         st.warning("No data available for trend analysis.")
         return
+    
+    st.markdown("---")
     
     # Time period selector
     col1, col2 = st.columns([3, 1])
@@ -82,9 +92,10 @@ def display_trends(full_df, filtered_df):
     
     col1, col2 = st.columns(2)
     
+    # Use full_df (trends data) which has lowercase columns
     with col1:
         # Stock distribution by location
-        location_stock = filtered_df.groupby('location')['current_stock'].sum().reset_index()
+        location_stock = full_df.groupby('location')['current_stock'].sum().reset_index()
         location_stock = location_stock.sort_values('current_stock', ascending=True)
         
         fig = px.bar(
@@ -99,8 +110,14 @@ def display_trends(full_df, filtered_df):
         st.plotly_chart(fig, width="stretch")
     
     with col2:
-        # Stock status by location
-        status_by_location = filtered_df.groupby(['location', 'stock_status']).size().reset_index(name='count')
+        # Stock status by location - need to calculate from current stock
+        latest_data = full_df.groupby(['location', 'category']).last().reset_index()
+        latest_data['stock_status'] = latest_data.apply(
+            lambda x: 'CRITICAL' if x['current_stock'] <= x['safety_stock'] 
+            else 'LOW' if x['current_stock'] <= x['reorder_point'] 
+            else 'HEALTHY', axis=1
+        )
+        status_by_location = latest_data.groupby(['location', 'stock_status']).size().reset_index(name='count')
         
         fig = px.bar(
             status_by_location,
@@ -122,27 +139,29 @@ def display_trends(full_df, filtered_df):
     # Item-level analysis
     st.subheader("🔍 Item-Level Analysis")
     
-    # Select an item for detailed view
+    # Select an item for detailed view - use latest snapshot from full_df
+    latest_snapshot = full_df[full_df['snapshot_date'] == full_df['snapshot_date'].max()]
     selected_item = st.selectbox(
         "Select item for detailed analysis",
-        options=sorted(filtered_df['item_name'].unique())
+        options=sorted(latest_snapshot['item_name'].unique())
     )
     
     if selected_item:
-        item_df = filtered_df[filtered_df['item_name'] == selected_item]
+        item_df = latest_snapshot[latest_snapshot['item_name'] == selected_item]
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
             total_stock = item_df['current_stock'].sum()
-            st.metric("Total Stock Across Locations", total_stock)
+            st.metric("Total Stock Across Locations", int(total_stock))
         
         with col2:
-            avg_stock_pct = item_df['stock_percentage'].mean()
-            st.metric("Avg Stock Percentage", f"{avg_stock_pct:.1f}%")
+            # Calculate stock percentage relative to reorder point
+            avg_pct = (item_df['current_stock'] / item_df['reorder_point'] * 100).mean()
+            st.metric("Avg Stock %", f"{avg_pct:.1f}%")
         
         with col3:
-            critical_locations = len(item_df[item_df['stock_status'].isin(['CRITICAL', 'LOW'])])
+            critical_locations = len(item_df[item_df['current_stock'] <= item_df['safety_stock']])
             st.metric("Locations with Issues", critical_locations)
         
         # Stock by location for selected item
@@ -156,10 +175,10 @@ def display_trends(full_df, filtered_df):
         ))
         
         fig.add_trace(go.Bar(
-            name='Max Stock',
+            name='Reorder Point',
             x=item_df['location'],
-            y=item_df['max_stock'],
-            marker_color='lightgray',
+            y=item_df['reorder_point'],
+            marker_color='orange',
             opacity=0.5
         ))
         
@@ -178,18 +197,23 @@ def display_trends(full_df, filtered_df):
     
     col1, col2, col3, col4 = st.columns(4)
     
+    # Use latest snapshot from full_df
+    latest_snapshot = full_df[full_df['snapshot_date'] == full_df['snapshot_date'].max()]
+    
     with col1:
-        total_items = filtered_df['item_name'].nunique()
+        total_items = latest_snapshot['item_name'].nunique()
         st.metric("Unique Items", total_items)
     
     with col2:
-        total_locations = filtered_df['location'].nunique()
+        total_locations = latest_snapshot['location'].nunique()
         st.metric("Locations", total_locations)
     
     with col3:
-        avg_stock_percentage = filtered_df['stock_percentage'].mean()
-        st.metric("Avg Stock Level", f"{avg_stock_percentage:.1f}%")
+        # Calculate stock percentage from current_stock vs reorder_point
+        avg_pct = (latest_snapshot['current_stock'] / latest_snapshot['reorder_point'] * 100).mean()
+        st.metric("Avg Stock Level", f"{avg_pct:.1f}%")
     
     with col4:
-        items_needing_restock = len(filtered_df[filtered_df['stock_percentage'] < 25])
+        # Items below 25% of reorder point
+        items_needing_restock = len(latest_snapshot[latest_snapshot['current_stock'] < latest_snapshot['reorder_point'] * 0.25])
         st.metric("Items Needing Restock", items_needing_restock)
