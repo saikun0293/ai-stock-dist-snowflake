@@ -1,18 +1,5 @@
 # AI-Powered Inventory Management System
 
-## 🧠 **NEW: Snowflake Cortex AI Integration**
-
-This system now includes advanced AI features powered by Snowflake Cortex:
-
-- 💬 **Natural Language Chat** - Ask questions about inventory in plain English
-- 🔍 **Anomaly Detection** - Automatically detect unusual stock patterns
-- 📈 **AI Forecasting** - Predict future demand with ML models
-- 💡 **Auto Insights** - Daily AI-generated recommendations
-
-[**See AI Features Documentation →**](docs/cortex_ai_guide.md)
-
----
-
 ### Snowflake Setup
 
 **What**: Create the backend infrastructure  
@@ -91,63 +78,42 @@ streamlit run app.py
 
 ## 📊 Architecture Flow
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     SNOWFLAKE BACKEND                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  📥 inventory_cleaned (your data)                            │
-│           ↓                                                   │
-│  🔄 INVENTORY_CHANGES_STREAM (CDC)                           │
-│           ↓                                                   │
-│  ┌──────────────────────────────────────────┐                │
-│  │  DYNAMIC TABLES (Auto-refresh)           │                │
-│  │  - DT_STOCK_HEALTH (5 min)               │                │
-│  │  - DT_ACTIVE_ALERTS (10 min)             │                │
-│  │  - DT_REORDER_RECOMMENDATIONS (30 min)   │                │
-│  │  - DT_LOCATION_PERFORMANCE (1 hour)      │                │
-│  │  - DT_CATEGORY_HEATMAP (15 min)          │                │
-│  └──────────────────────────────────────────┘                │
-│           ↓                                                   │
-│  ⚙️ TASKS (Automated Processing)                             │
-│  - TASK_HOURLY_ALERT_CHECK                                   │
-│  - TASK_REORDER_RECOMMENDATIONS                              │
-│           ↓                                                   │
-│  💾 LOGGING TABLES                                           │
-│  - ALERT_HISTORY                                             │
-│  - REORDER_ACTION_LOG                                        │
-│  - EXPORT_LOG                                                │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-                         ↓
-                    Snowflake
-                    Connector
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│                   STREAMLIT DASHBOARD                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Tab 1: 🗺️ Heatmap View                                     │
-│  - Location x Category matrix                                │
-│  - Color-coded by risk score                                 │
-│  - Interactive scatter plots                                 │
-│                                                               │
-│  Tab 2: 🚨 Active Alerts                                     │
-│  - Critical item warnings                                    │
-│  - Days-until-stockout                                       │
-│  - Priority-based sorting                                    │
-│                                                               │
-│  Tab 3: 📋 Reorder List                                      │
-│  - Recommended order quantities                              │
-│  - CSV/Excel export                                          │
-│  - Supplier information                                      │
-│                                                               │
-│  Tab 4: 📊 Analytics                                         │
-│  - Warehouse performance                                     │
-│  - ABC analysis                                              │
-│  - Top critical items                                        │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+   A[📥 inventory_cleaned] --> B[🔄 INVENTORY_CHANGES_STREAM]
+   A --> C[📊 VIEWS Layer]
+
+   C --> D[V_STOCK_HEALTH_MATRIX]
+   C --> E[V_ACTIVE_ALERTS]
+   C --> F[V_REORDER_RECOMMENDATIONS]
+   C --> G[V_LOCATION_PERFORMANCE]
+   C --> H[V_CATEGORY_HEATMAP]
+
+   D --> I[DYNAMIC TABLES]
+   E --> I
+   F --> I
+   G --> I
+   H --> I
+
+   I --> J[DT_STOCK_HEALTH - 5 min]
+   I --> K[DT_ACTIVE_ALERTS - 10 min]
+   I --> L[DT_REORDER_RECOMMENDATIONS - 30 min]
+   I --> M[DT_LOCATION_PERFORMANCE - 1 hour]
+   I --> N[DT_CATEGORY_HEATMAP - 15 min]
+
+   J --> O[⚙️ TASKS]
+   K --> O
+   L --> O
+
+   O --> P[TASK_HOURLY_ALERT_CHECK]
+   O --> Q[TASK_REORDER_RECOMMENDATIONS]
+
+   P --> R[💾 LOGGING TABLES]
+   Q --> R
+
+   R --> S[ALERT_HISTORY]
+   R --> T[REORDER_ACTION_LOG]
+   R --> U[EXPORT_LOG]
 ```
 
 ---
