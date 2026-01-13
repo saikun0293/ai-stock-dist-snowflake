@@ -8,132 +8,67 @@ import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime
 
-def display_alerts(alerts_df, inventory_df):
-    """Display stock-out alerts and analytics"""
+def display_alerts(alerts_df):
+    """Display active alerts"""
+    st.markdown("## 🚨 Active Stock Alerts")
     
     if len(alerts_df) == 0:
-        st.success("✅ No active alerts! All inventory levels are healthy.")
+        st.markdown('<div class="success-message">✅ <b>No Critical Alerts!</b> All inventory levels are healthy.</div>', 
+                    unsafe_allow_html=True)
         return
     
     # Alert summary
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
+    
+    priority_col = 'PRIORITY' if 'PRIORITY' in alerts_df.columns else 'STOCK_STATUS'
     
     with col1:
-        high_priority = len(alerts_df[alerts_df['priority'] == 'HIGH'])
-        st.metric("🔴 High Priority", high_priority)
+        critical = len(alerts_df[alerts_df[priority_col].isin(['CRITICAL', 'HIGH'])])
+        st.markdown(f'<div class="critical-alert"><h2>{critical}</h2><p>Critical Alerts</p></div>', 
+                    unsafe_allow_html=True)
     
     with col2:
-        medium_priority = len(alerts_df[alerts_df['priority'] == 'MEDIUM'])
-        st.metric("🟡 Medium Priority", medium_priority)
+        medium = len(alerts_df[alerts_df[priority_col] == 'MEDIUM']) if 'MEDIUM' in alerts_df[priority_col].values else 0
+        st.metric("🟡 Medium Priority", medium)
     
     with col3:
-        avg_days_open = alerts_df['days_open'].mean() if len(alerts_df) > 0 else 0
-        st.metric("📅 Avg Days Open", f"{avg_days_open:.1f}")
+        avg_stockout = alerts_df[alerts_df['DAYS_UNTIL_STOCKOUT'] < 999]['DAYS_UNTIL_STOCKOUT'].mean()
+        st.metric("⏱️ Avg Days to Stockout", f"{avg_stockout:.1f}")
+    
+    with col4:
+        locations_affected = alerts_df['LOCATION'].nunique()
+        st.metric("📍 Locations Affected", locations_affected)
     
     st.markdown("---")
     
-    # Visualizations
-    col1, col2 = st.columns(2)
+    # Alert list
+    st.markdown("### 📋 Alert Details")
     
-    with col1:
-        # Alerts by location
-        location_alerts = alerts_df.groupby('location').size().reset_index(name='count')
-        fig = px.bar(
-            location_alerts,
-            x='location',
-            y='count',
-            title="Alerts by Location",
-            color='count',
-            color_continuous_scale='Reds'
-        )
-        fig.update_layout(showlegend=False, xaxis_tickangle=-45)
-        st.plotly_chart(fig, width="stretch")
+    # Sort by priority
+    if priority_col in alerts_df.columns:
+        priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+        alerts_df['_sort'] = alerts_df[priority_col].map(priority_order)
+        alerts_df = alerts_df.sort_values('_sort')
     
-    with col2:
-        # Alerts by category
-        category_alerts = alerts_df.groupby('category').size().reset_index(name='count')
-        fig = px.pie(
-            category_alerts,
-            values='count',
-            names='category',
-            title="Alerts by Category",
-            color_discrete_sequence=px.colors.sequential.Reds_r
-        )
-        st.plotly_chart(fig, width="stretch")
-    
-    # Priority-based alert list
-    st.subheader("🚨 Active Alerts")
-    
-    # Filter options
-    priority_filter = st.multiselect(
-        "Filter by Priority",
-        options=['HIGH', 'MEDIUM', 'LOW'],
-        default=['HIGH', 'MEDIUM', 'LOW']
-    )
-    
-    filtered_alerts = alerts_df[alerts_df['priority'].isin(priority_filter)]
-    
-    # Display alerts as cards
-    for _, alert in filtered_alerts.iterrows():
-        priority_color = {
-            'HIGH': '#ff4b4b',
-            'MEDIUM': '#ffa500',
-            'LOW': '#ffeb3b'
-        }
+    for idx, alert in alerts_df.head(20).iterrows():
+        priority = alert.get('PRIORITY', alert.get('STOCK_STATUS', 'UNKNOWN'))
         
-        with st.container():
-            col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
-            
-            with col1:
-                st.markdown(f"**{alert['item_name']}**")
-                st.caption(f"{alert['location']} • {alert['category']}")
-            
-            with col2:
-                st.metric("Current Stock", alert['current_stock'])
-            
-            with col3:
-                st.metric("Days to Stockout", f"{alert['days_until_stockout']:.1f}")
-            
-            with col4:
-                priority_emoji = {
-                    'HIGH': '🔴',
-                    'MEDIUM': '🟡',
-                    'LOW': '🟢'
-                }
-                st.markdown(f"### {priority_emoji[alert['priority']]}")
-                st.caption(f"{alert['priority']}")
-            
-            st.markdown(f"<div style='height:2px; background-color:{priority_color[alert['priority']]};'></div>", 
-                       unsafe_allow_html=True)
-            st.markdown("")
-    
-    # Alert timeline
-    st.subheader("📊 Alert Timeline")
-    
-    if 'alert_date' in alerts_df.columns:
-        alerts_df['alert_date'] = pd.to_datetime(alerts_df['alert_date'])
-        timeline_data = alerts_df.groupby('alert_date').size().reset_index(name='count')
+        if priority in ['CRITICAL', 'HIGH']:
+            alert_class = "critical-alert"
+        elif priority == 'MEDIUM':
+            alert_class = "warning-alert"
+        else:
+            alert_class = "success-message"
         
-        fig = px.line(
-            timeline_data,
-            x='alert_date',
-            y='count',
-            title="Daily Alert Count",
-            markers=True
-        )
-        fig.update_layout(
-            xaxis_title="Date",
-            yaxis_title="Number of Alerts"
-        )
-        st.plotly_chart(fig, width="stretch")
+        days_text = f"{alert.get('DAYS_UNTIL_STOCKOUT', 'N/A'):.1f}" if isinstance(alert.get('DAYS_UNTIL_STOCKOUT'), (int, float)) and alert.get('DAYS_UNTIL_STOCKOUT', 999) < 999 else 'N/A'
+        
+        st.markdown(f"""
+        <div class="{alert_class}">
+            <h4>🚨 {alert['SKU_NAME']} <span style="float:right; font-size:0.85rem; opacity:0.9;">{priority}</span></h4>
+            <p><b>{alert['LOCATION']}</b> • {alert['CATEGORY']} • ABC Class: {alert.get('ABC_CLASS', 'N/A')}</p>
+            <p>Stock: <b>{alert['QUANTITY_ON_HAND']:.0f}</b> / Reorder: {alert['REORDER_POINT']:.0f} / Safety: {alert.get('SAFETY_STOCK', 'N/A'):.0f} • Days left: <b>{days_text}</b></p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    # Export alerts
-    st.subheader("📥 Export Alerts")
-    
-    csv = filtered_alerts.to_csv(index=False)
-    st.download_button(
-        label="Download Alerts as CSV",
-        data=csv,
-        file_name=f"stock_alerts_{datetime.now().strftime('%Y%m%d')}.csv",
-        mime="text/csv"
-    )
+    if len(alerts_df) > 20:
+        st.info(f"Showing top 20 of {len(alerts_df)} alerts. Use filters to narrow down.")
