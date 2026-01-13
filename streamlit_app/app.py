@@ -329,13 +329,12 @@ def main():
         st.metric("❤️ Overall Health Score", f"{health_score:.0f}%", delta=f"{health_score:.0f}% healthy")
     
     # Tab Navigation
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6= st.tabs([
         "🗺️ Heatmap View", 
         "🚨 Active Alerts", 
         "📋 Reorder List", 
         "📊 Analytics", 
         "📈 Forecasting",
-        "📉 Trends",
         "🧠 AI Insights"
     ])
     
@@ -377,15 +376,9 @@ def main():
         display_forecasts(forecast_df, filtered_df)
     
     with tab6:
-        # Trends tab
-        from components.trends import display_trends
-        trends_df = generate_trends_data(stock_df if stock_df is not None else filtered_df)
-        display_trends(trends_df, filtered_df)
-    
-    with tab7:
         from components.cortex_ai import display_cortex_features
         if conn is not None:
-            display_cortex_features(conn, filtered_df, filtered_alerts_df)
+            display_cortex_features(conn, filtered_df)
         else:
             st.warning("⚠️ Snowflake connection required for AI features. Connect to Snowflake to enable.")
             st.info("💡 AI features include: Natural Language Chat, Anomaly Detection, Demand Forecasting, and Auto-Generated Insights.")
