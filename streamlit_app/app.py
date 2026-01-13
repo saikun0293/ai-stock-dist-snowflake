@@ -5,11 +5,7 @@ AI-Powered Stock Management for Hospitals, NGOs & Distribution Systems
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import numpy as np
-from io import BytesIO
+import logging
 
 # Configure page
 st.set_page_config(
@@ -147,6 +143,11 @@ except Exception as e:
     USE_SNOWFLAKE = False
     st.warning(f"⚠️ Snowflake connector not available. Using demo mode. Error: {e}")
 
+# Import components
+from components.alerts import display_alerts
+from components.reorder import display_reorder_list
+from components.analytics import display_analytics
+
 def load_data_from_snowflake():
     """Load data from Snowflake"""
     conn = get_connection()
@@ -158,48 +159,6 @@ def load_data_from_snowflake():
         heatmap_df = query_category_heatmap(conn)
         return stock_df, alerts_df, reorder_df, location_df, heatmap_df, conn
     return None, None, None, None, None, None
-
-def generate_forecast_data(df):
-    """Generate forecast data from inventory dataframe"""
-    import random
-    
-    forecast_data = []
-    # Use all filtered items for accurate forecasting
-    for idx, row in df.iterrows():
-        current_stock = row.get('QUANTITY_ON_HAND', 0)
-        daily_sales = row.get('AVG_DAILY_SALES', 5)
-        
-        # Add more variation to make graphs interesting
-        daily_sales_variance = daily_sales * random.uniform(0.7, 1.5)
-        predicted_consumption = daily_sales_variance * random.uniform(0.8, 1.3)
-        
-        # More varied predictions
-        days_variance = random.randint(10, 18)
-        predicted_stock = max(0, current_stock - (predicted_consumption * days_variance))
-        days_to_stockout = current_stock / predicted_consumption if predicted_consumption > 0 else 999
-        
-        # Vary model accuracy based on item characteristics
-        base_accuracy = random.uniform(70, 98)
-        accuracy_modifier = -5 if current_stock < 50 else 0
-        model_accuracy = max(65, base_accuracy + accuracy_modifier)
-        
-        forecast_data.append({
-            'item_name': row.get('SKU_NAME', 'Unknown'),
-            'sku_id': row.get('SKU_ID', ''),
-            'location': row.get('LOCATION', 'Unknown'),
-            'category': row.get('CATEGORY', 'Unknown'),
-            'current_stock': float(current_stock),
-            'predicted_stock': float(predicted_stock),
-            'predicted_consumption': float(predicted_consumption),
-            'predicted_days_to_stockout': float(days_to_stockout),
-            'model_accuracy': float(model_accuracy),
-            'forecast_horizon_days': 14,
-            'confidence_interval_lower': float(predicted_consumption * 0.85),
-            'confidence_interval_upper': float(predicted_consumption * 1.15),
-            'stockout_risk': 'HIGH RISK' if days_to_stockout < 5 else 'MODERATE RISK' if days_to_stockout < 10 else 'LOW RISK'
-        })
-    
-    return pd.DataFrame(forecast_data)
 
 def generate_trends_data(df):
     """Generate time series data for trends analysis"""
@@ -309,7 +268,9 @@ def main():
         with st.spinner("🔄 Loading inventory data..."):
             if USE_SNOWFLAKE:
                 stock_df, alerts_df, reorder_df, location_df, heatmap_df, conn = load_data_from_snowflake()
+                logging.info(f"Successfully loaded data from Snowflake - USE_SNOWFLAKE={USE_SNOWFLAKE}")
                 if stock_df is None:
+                    logging.info("Falling back to demo data due to failed Snowflake data load.")
                     stock_df, alerts_df, reorder_df, location_df, heatmap_df, conn = load_demo_data()
             else:
                 stock_df, alerts_df, reorder_df, location_df, heatmap_df, conn = load_demo_data()
@@ -349,15 +310,15 @@ def main():
     
     with col1:
         critical_count = len(filtered_df[filtered_df['STOCK_STATUS'] == 'CRITICAL'])
-        st.metric("🔴 Critical Items", critical_count, delta=f"-{critical_count} urgent", delta_color="inverse")
+        st.metric("🔴 Critical Items", critical_count)
     
     with col2:
         low_count = len(filtered_df[filtered_df['STOCK_STATUS'] == 'LOW'])
-        st.metric("🟡 Low Stock", low_count, delta=f"{low_count} need attention")
+        st.metric("🟡 Low Stock", low_count)
     
     with col3:
         avg_days = filtered_df[filtered_df['DAYS_UNTIL_STOCKOUT'] < 999]['DAYS_UNTIL_STOCKOUT'].mean()
-        st.metric("📅 Avg Days to Stockout", f"{avg_days:.1f}", delta=f"Monitor closely")
+        st.metric("📅 Avg Days to Stockout", f"{avg_days:.1f}", delta=f"Monitor closely", delta_color="inverse")
     
     with col4:
         total_value = filtered_df['QUANTITY_ON_HAND'].sum() * filtered_df['UNIT_COST_USD'].mean()
@@ -367,16 +328,13 @@ def main():
         health_score = 100 - (critical_count + low_count) / len(filtered_df) * 100 if len(filtered_df) > 0 else 0
         st.metric("❤️ Overall Health Score", f"{health_score:.0f}%", delta=f"{health_score:.0f}% healthy")
     
-    st.markdown("---")
-    
     # Tab Navigation
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6= st.tabs([
         "🗺️ Heatmap View", 
         "🚨 Active Alerts", 
         "📋 Reorder List", 
         "📊 Analytics", 
         "📈 Forecasting",
-        "📉 Trends",
         "🧠 AI Insights"
     ])
     
@@ -400,6 +358,7 @@ def main():
         filtered_heatmap_df = filtered_heatmap_df[filtered_heatmap_df['CATEGORY'] == selected_category]
     
     with tab1:
+        from components.heatmap import display_heatmap
         display_heatmap(filtered_df, filtered_heatmap_df)
     
     with tab2:
@@ -412,394 +371,18 @@ def main():
         display_analytics(filtered_df, location_df)
     
     with tab5:
-        # Forecasting tab
-        from components.forecasting import display_forecasts
+        from components.forecasting import display_forecasts, generate_forecast_data
         forecast_df = generate_forecast_data(filtered_df)
         display_forecasts(forecast_df, filtered_df)
     
     with tab6:
-        # Trends tab
-        from components.trends import display_trends
-        trends_df = generate_trends_data(stock_df if stock_df is not None else filtered_df)
-        display_trends(trends_df, filtered_df)
-    
-    with tab7:
         from components.cortex_ai import display_cortex_features
         if conn is not None:
-            display_cortex_features(conn, filtered_df, filtered_alerts_df)
+            display_cortex_features(conn, filtered_df)
         else:
             st.warning("⚠️ Snowflake connection required for AI features. Connect to Snowflake to enable.")
             st.info("💡 AI features include: Natural Language Chat, Anomaly Detection, Demand Forecasting, and Auto-Generated Insights.")
 
-
-def display_heatmap(df, heatmap_df):
-    """Display interactive heatmap"""
-    st.markdown("## 🗺️ Inventory Health Heatmap")
-    st.markdown("**Visual overview of stock levels across locations and categories**")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col2:
-        view_mode = st.radio("View By", ["Location x Category", "Individual Items"])
-        color_metric = st.selectbox("Color By", ["Risk Score", "Stock Status", "Days Until Stockout"])
-    
-    with col1:
-        if view_mode == "Location x Category":
-            # Aggregate heatmap
-            if 'AVG_RISK_SCORE' in heatmap_df.columns:
-                pivot_df = heatmap_df.pivot_table(
-                    values='AVG_RISK_SCORE',
-                    index='CATEGORY',
-                    columns='LOCATION',
-                    aggfunc='mean'
-                )
-            else:
-                pivot_df = df.pivot_table(
-                    values='RISK_SCORE',
-                    index='CATEGORY',
-                    columns='LOCATION',
-                    aggfunc='mean'
-                )
-            
-            fig = go.Figure(data=go.Heatmap(
-                z=pivot_df.values,
-                x=pivot_df.columns,
-                y=pivot_df.index,
-                colorscale='RdYlGn_r',
-                text=pivot_df.values.round(1),
-                texttemplate='%{text}',
-                textfont={"size": 12},
-                colorbar=dict(title="Risk Score")
-            ))
-            
-            fig.update_layout(
-                title="Stock Health by Location & Category",
-                xaxis_title="Location",
-                yaxis_title="Category",
-                height=500,
-                font=dict(size=12)
-            )
-            
-            st.plotly_chart(fig, width="stretch")
-        
-        else:
-            # Individual items scatter
-            fig = px.scatter(
-                df.head(200),
-                x='LOCATION',
-                y='CATEGORY',
-                size='QUANTITY_ON_HAND',
-                color='RISK_SCORE',
-                hover_data=['SKU_NAME', 'QUANTITY_ON_HAND', 'DAYS_UNTIL_STOCKOUT'],
-                color_continuous_scale='RdYlGn_r',
-                title="Item-Level Stock Health"
-            )
-            
-            fig.update_layout(height=500)
-            st.plotly_chart(fig, width="stretch")
-    
-    # Stock distribution
-    st.markdown("### 📊 Stock Distribution")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        status_counts = df['STOCK_STATUS'].value_counts()
-        fig = px.pie(
-            values=status_counts.values,
-            names=status_counts.index,
-            title="Items by Stock Status",
-            color=status_counts.index,
-            color_discrete_map={
-                'CRITICAL': '#f5576c',
-                'LOW': '#ffa500',
-                'MODERATE': '#ffeb3b',
-                'HEALTHY': '#4caf50'
-            }
-        )
-        st.plotly_chart(fig, width="stretch")
-    
-    with col2:
-        category_counts = df.groupby('CATEGORY')['STOCK_STATUS'].value_counts().unstack(fill_value=0)
-        fig = px.bar(
-            category_counts,
-            title="Stock Status by Category",
-            barmode='stack',
-            color_discrete_map={
-                'CRITICAL': '#f5576c',
-                'LOW': '#ffa500',
-                'MODERATE': '#ffeb3b',
-                'HEALTHY': '#4caf50'
-            }
-        )
-        st.plotly_chart(fig, width="stretch")
-
-def display_alerts(alerts_df):
-    """Display active alerts"""
-    st.markdown("## 🚨 Active Stock Alerts")
-    
-    if len(alerts_df) == 0:
-        st.markdown('<div class="success-message">✅ <b>No Critical Alerts!</b> All inventory levels are healthy.</div>', 
-                    unsafe_allow_html=True)
-        return
-    
-    # Alert summary
-    col1, col2, col3, col4 = st.columns(4)
-    
-    priority_col = 'PRIORITY' if 'PRIORITY' in alerts_df.columns else 'STOCK_STATUS'
-    
-    with col1:
-        critical = len(alerts_df[alerts_df[priority_col].isin(['CRITICAL', 'HIGH'])])
-        st.markdown(f'<div class="critical-alert"><h2>{critical}</h2><p>Critical Alerts</p></div>', 
-                    unsafe_allow_html=True)
-    
-    with col2:
-        medium = len(alerts_df[alerts_df[priority_col] == 'MEDIUM']) if 'MEDIUM' in alerts_df[priority_col].values else 0
-        st.metric("🟡 Medium Priority", medium)
-    
-    with col3:
-        avg_stockout = alerts_df[alerts_df['DAYS_UNTIL_STOCKOUT'] < 999]['DAYS_UNTIL_STOCKOUT'].mean()
-        st.metric("⏱️ Avg Days to Stockout", f"{avg_stockout:.1f}")
-    
-    with col4:
-        locations_affected = alerts_df['LOCATION'].nunique()
-        st.metric("📍 Locations Affected", locations_affected)
-    
-    st.markdown("---")
-    
-    # Alert list
-    st.markdown("### 📋 Alert Details")
-    
-    # Sort by priority
-    if priority_col in alerts_df.columns:
-        priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
-        alerts_df['_sort'] = alerts_df[priority_col].map(priority_order)
-        alerts_df = alerts_df.sort_values('_sort')
-    
-    for idx, alert in alerts_df.head(20).iterrows():
-        priority = alert.get('PRIORITY', alert.get('STOCK_STATUS', 'UNKNOWN'))
-        
-        if priority in ['CRITICAL', 'HIGH']:
-            alert_class = "critical-alert"
-        elif priority == 'MEDIUM':
-            alert_class = "warning-alert"
-        else:
-            alert_class = "success-message"
-        
-        days_text = f"{alert.get('DAYS_UNTIL_STOCKOUT', 'N/A'):.1f}" if isinstance(alert.get('DAYS_UNTIL_STOCKOUT'), (int, float)) and alert.get('DAYS_UNTIL_STOCKOUT', 999) < 999 else 'N/A'
-        
-        st.markdown(f"""
-        <div class="{alert_class}">
-            <h4>🚨 {alert['SKU_NAME']} <span style="float:right; font-size:0.85rem; opacity:0.9;">{priority}</span></h4>
-            <p><b>{alert['LOCATION']}</b> • {alert['CATEGORY']} • ABC Class: {alert.get('ABC_CLASS', 'N/A')}</p>
-            <p>Stock: <b>{alert['QUANTITY_ON_HAND']:.0f}</b> / Reorder: {alert['REORDER_POINT']:.0f} / Safety: {alert.get('SAFETY_STOCK', 'N/A'):.0f} • Days left: <b>{days_text}</b></p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    if len(alerts_df) > 20:
-        st.info(f"Showing top 20 of {len(alerts_df)} alerts. Use filters to narrow down.")
-
-def display_reorder_list(reorder_df, conn, location_filter, category_filter):
-    """Display and export reorder recommendations"""
-    st.markdown("## 📋 Reorder Recommendations")
-    st.markdown("**Export-ready procurement list with recommended order quantities**")
-    
-    if len(reorder_df) == 0:
-        st.success("✅ No items need reordering at this time!")
-        return
-    
-    # Summary metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        total_items = len(reorder_df)
-        st.metric("📦 Items to Reorder", total_items)
-    
-    with col2:
-        if 'ESTIMATED_ORDER_VALUE_USD' in reorder_df.columns:
-            total_value = reorder_df['ESTIMATED_ORDER_VALUE_USD'].sum()
-        else:
-            total_value = (reorder_df['REORDER_POINT'] * reorder_df['UNIT_COST_USD']).sum()
-        st.metric("💰 Total Order Value", f"${total_value:,.0f}")
-    
-    with col3:
-        if 'PRIORITY_SCORE' in reorder_df.columns:
-            urgent = len(reorder_df[reorder_df['PRIORITY_SCORE'] >= 8])
-        else:
-            urgent = len(reorder_df[reorder_df['QUANTITY_ON_HAND'] <= reorder_df['SAFETY_STOCK']])
-        st.metric("🚨 Urgent Items", urgent)
-    
-    with col4:
-        suppliers = reorder_df['SUPPLIER_NAME'].nunique() if 'SUPPLIER_NAME' in reorder_df.columns else 0
-        st.metric("🏢 Suppliers Involved", suppliers)
-    
-    st.markdown("---")
-    
-    # Display table
-    display_cols = ['SKU_ID', 'SKU_NAME', 'CATEGORY', 'LOCATION', 'QUANTITY_ON_HAND', 'REORDER_POINT']
-    if 'RECOMMENDED_ORDER_QTY' in reorder_df.columns:
-        display_cols.append('RECOMMENDED_ORDER_QTY')
-    if 'PRIORITY_SCORE' in reorder_df.columns:
-        display_cols.append('PRIORITY_SCORE')
-    if 'UNIT_COST_USD' in reorder_df.columns:
-        display_cols.append('UNIT_COST_USD')
-    if 'SUPPLIER_NAME' in reorder_df.columns:
-        display_cols.append('SUPPLIER_NAME')
-    
-    available_cols = [col for col in display_cols if col in reorder_df.columns]
-    st.dataframe(reorder_df[available_cols].head(100), width="stretch", height=400)
-    
-    # Export section
-    st.markdown("### 📥 Export Reorder List")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        export_format = st.selectbox("Format", ["CSV", "Excel"])
-    
-    with col2:
-        include_all = st.checkbox("Include all items", value=True)
-    
-    with col3:
-        st.write("")  # Spacer
-    
-    # Generate export
-    export_df = reorder_df.copy()
-    
-    if not include_all:
-        export_df = export_df.head(100)
-    
-    # Rename columns for export
-    export_df = export_df.rename(columns={
-        'SKU_ID': 'SKU ID',
-        'SKU_NAME': 'Item Name',
-        'CATEGORY': 'Category',
-        'LOCATION': 'Location',
-        'QUANTITY_ON_HAND': 'Current Stock',
-        'REORDER_POINT': 'Reorder Point',
-        'RECOMMENDED_ORDER_QTY': 'Recommended Qty',
-        'UNIT_COST_USD': 'Unit Cost (USD)',
-        'SUPPLIER_NAME': 'Supplier'
-    })
-    
-    if export_format == "CSV":
-        csv = export_df.to_csv(index=False)
-        st.download_button(
-            label="⬇️ Download CSV",
-            data=csv,
-            file_name=f"reorder_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
-    else:
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            export_df.to_excel(writer, sheet_name='Reorder List', index=False)
-        
-        st.download_button(
-            label="⬇️ Download Excel",
-            data=buffer.getvalue(),
-            file_name=f"reorder_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    
-    # Log export if connected to Snowflake
-    if conn:
-        try:
-            log_export(conn, 'REORDER_LIST', len(export_df), 'dashboard_user', export_format,
-                      {'location': location_filter, 'category': category_filter})
-        except:
-            pass
-
-def display_analytics(stock_df, location_df):
-    """Display analytics and insights"""
-    st.markdown("## 📊 Analytics & Insights")
-    
-    # Location performance
-    if location_df is not None and len(location_df) > 0:
-        st.markdown("### 📍 Warehouse Performance")
-        
-        fig = go.Figure()
-        
-        fig.add_trace(go.Bar(
-            x=location_df['LOCATION'],
-            y=location_df['CRITICAL_COUNT'],
-            name='Critical Items',
-            marker_color='#f5576c'
-        ))
-        
-        fig.add_trace(go.Bar(
-            x=location_df['LOCATION'],
-            y=location_df['LOW_STOCK_COUNT'],
-            name='Low Stock Items',
-            marker_color='#ffa500'
-        ))
-        
-        fig.add_trace(go.Bar(
-            x=location_df['LOCATION'],
-            y=location_df['HEALTHY_COUNT'],
-            name='Healthy Items',
-            marker_color='#4caf50'
-        ))
-        
-        fig.update_layout(
-            barmode='stack',
-            title='Stock Health by Location',
-            xaxis_title='Location',
-            yaxis_title='Number of Items',
-            height=400
-        )
-        
-        st.plotly_chart(fig, width="stretch")
-    
-    # ABC Analysis
-    st.markdown("### 🎯 ABC Analysis")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        abc_counts = stock_df['ABC_CLASS'].value_counts()
-        fig = px.pie(
-            values=abc_counts.values,
-            names=abc_counts.index,
-            title="Items by ABC Classification",
-            color_discrete_sequence=px.colors.sequential.Blues_r
-        )
-        st.plotly_chart(fig, width="stretch")
-    
-    with col2:
-        # Risk by ABC class (higher score = more risk)
-        abc_risk = stock_df.groupby('ABC_CLASS')['RISK_SCORE'].mean().reset_index()
-        abc_risk = abc_risk.sort_values('ABC_CLASS')  # Sort A, B, C
-        
-        fig = px.bar(
-            abc_risk,
-            x='ABC_CLASS',
-            y='RISK_SCORE',
-            title="Average Risk Score by ABC Class",
-            color='RISK_SCORE',
-            color_continuous_scale='RdYlGn_r',  # Red=high risk, Green=low risk
-            labels={'RISK_SCORE': 'Avg Risk Score', 'ABC_CLASS': 'ABC Class'},
-            text='RISK_SCORE'
-        )
-        
-        # Format the text on bars
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        
-        # Set y-axis range from 0-100
-        fig.update_layout(
-            yaxis_range=[0, 100],
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig, width="stretch")
-    
-    # Top issues
-    st.markdown("### ⚠️ Top 10 Critical Items")
-    
-    critical_items = stock_df.nlargest(10, 'RISK_SCORE')[
-        ['SKU_NAME', 'LOCATION', 'CATEGORY', 'QUANTITY_ON_HAND', 'REORDER_POINT', 'DAYS_UNTIL_STOCKOUT', 'RISK_SCORE']
-    ]
-    
-    st.dataframe(critical_items, width="stretch")
 
 if __name__ == "__main__":
     main()

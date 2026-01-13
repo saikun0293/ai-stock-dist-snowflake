@@ -7,195 +7,152 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 
-def display_inventory_heatmap(df):
-    """Display interactive inventory heatmap"""
+def display_heatmap(df, heatmap_df):
+    """Display interactive heatmap"""
+    st.markdown("## 🗺️ Inventory Health Heatmap")
+    st.markdown("**Visual overview of stock levels across locations and categories**")
     
-    if len(df) == 0:
-        st.warning("No data available for the selected filters.")
-        return
-    
-    # Display options
     col1, col2 = st.columns([3, 1])
     
     with col2:
-        view_by = st.radio("View by", ["Category", "Location"])
-        color_by = st.selectbox("Color by", ["Stock Status", "Stock Percentage", "Days Until Stockout"])
+        view_mode = st.radio("View By", ["Location x Category", "Individual Items"])
+        color_metric = st.selectbox("Color By", ["Risk Score", "Days Until Stockout", "Critical Items %"])
     
     with col1:
-        # Prepare data for heatmap
-        if view_by == "Category":
-            pivot_col = 'category'
-        else:
-            pivot_col = 'location'
-        
-        # Create pivot table based on color scheme
-        if color_by == "Stock Status":
-            # Status-based heatmap
-            display_status_heatmap(df, pivot_col)
-        elif color_by == "Stock Percentage":
-            display_percentage_heatmap(df, pivot_col)
-        else:
-            display_stockout_heatmap(df, pivot_col)
-    
-    # Detailed table view
-    st.subheader("Detailed Inventory")
-    
-    # Add search and filters
-    search = st.text_input("🔍 Search items", "")
-    if search:
-        df = df[df['item_name'].str.contains(search, case=False)]
-    
-    # Display table
-    display_cols = ['location', 'category', 'item_name', 'current_stock', 
-                    'max_stock', 'stock_percentage', 'stock_status', 'days_until_stockout']
-    
-    # For better performance with large datasets, use conditional display instead of styling
-    # Only apply styling if dataset is reasonably sized
-    if len(df) <= 1000:
-        # Color code the status column
-        def highlight_status(row):
-            if row['stock_status'] == 'CRITICAL':
-                return ['background-color: #ff4b4b'] * len(row)
-            elif row['stock_status'] == 'LOW':
-                return ['background-color: #ffa500'] * len(row)
-            elif row['stock_status'] == 'MODERATE':
-                return ['background-color: #ffeb3b'] * len(row)
+        if view_mode == "Location x Category":
+            # Use pre-aggregated heatmap_df if available from Snowflake
+            if heatmap_df is not None and len(heatmap_df) > 0 and 'AVG_RISK_SCORE' in heatmap_df.columns:
+                # Determine which column to use based on selection
+                if color_metric == "Risk Score":
+                    value_col = 'AVG_RISK_SCORE'
+                    color_scale = 'RdYlGn_r'  # Red=high risk (bad), Green=low risk (good)
+                elif color_metric == "Days Until Stockout":
+                    value_col = 'AVG_DAYS_COVERAGE'
+                    color_scale = 'RdYlGn'  # Green=more days (good), Red=fewer days (bad)
+                else:  # Critical Items %
+                    # Calculate percentage of critical items
+                    heatmap_df['_critical_pct'] = (heatmap_df['CRITICAL_SKUS'] / heatmap_df['TOTAL_SKUS'] * 100).fillna(0)
+                    value_col = '_critical_pct'
+                    color_scale = 'RdYlGn_r'  # Red=high % critical (bad), Green=low % (good)
+                
+                # Create pivot table
+                pivot_df = heatmap_df.pivot_table(
+                    values=value_col,
+                    index='CATEGORY',
+                    columns='LOCATION',
+                    aggfunc='mean'
+                )
             else:
-                return ['background-color: #4caf50'] * len(row)
+                # Fallback: calculate from raw df
+                if color_metric == "Risk Score":
+                    value_col = 'RISK_SCORE'
+                    color_scale = 'RdYlGn_r'
+                elif color_metric == "Days Until Stockout":
+                    value_col = 'DAYS_UNTIL_STOCKOUT'
+                    color_scale = 'RdYlGn'
+                else:  # Critical Items %
+                    # Calculate percentage of critical items
+                    df['_is_critical'] = (df['STOCK_STATUS'] == 'CRITICAL').astype(int) * 100
+                    value_col = '_is_critical'
+                    color_scale = 'RdYlGn_r'
+                
+                pivot_df = df.pivot_table(
+                    values=value_col,
+                    index='CATEGORY',
+                    columns='LOCATION',
+                    aggfunc='mean'
+                )
+            
+            # Create heatmap
+            fig = go.Figure(data=go.Heatmap(
+                z=pivot_df.values,
+                x=pivot_df.columns,
+                y=pivot_df.index,
+                colorscale=color_scale,
+                text=pivot_df.values.round(1),
+                texttemplate='%{text}',
+                textfont={"size": 12},
+                colorbar=dict(title=color_metric)
+            ))
+            
+            fig.update_layout(
+                title=f"Stock Health by Location & Category ({color_metric})",
+                xaxis_title="Location",
+                yaxis_title="Category",
+                height=500,
+                font=dict(size=12)
+            )
+            
+            st.plotly_chart(fig, width="stretch")
         
-        styled_df = df[display_cols].style.apply(highlight_status, axis=1)
-        st.dataframe(styled_df, width="stretch", height=400)
-    else:
-        # For large datasets, display without styling for better performance
-        st.dataframe(df[display_cols], width="stretch", height=400)
-        st.info("💡 Tip: Use filters to reduce dataset size for color-coded display")
-
-def display_status_heatmap(df, pivot_col):
-    """Display heatmap colored by stock status"""
+        else:
+            # Individual items scatter - show all filtered items
+            if color_metric == "Risk Score":
+                color_col = 'RISK_SCORE'
+                color_scale = 'RdYlGn_r'
+            elif color_metric == "Days Until Stockout":
+                color_col = 'DAYS_UNTIL_STOCKOUT'
+                color_scale = 'RdYlGn'
+                # Cap at 60 days for better visualization (999 = no stockout concern)
+                df_plot = df.copy()
+                df_plot['_display_days'] = df_plot[color_col].apply(lambda x: min(x, 60))
+                color_col = '_display_days'
+            else:  # Critical Items %
+                color_col = 'RISK_SCORE'
+                color_scale = 'RdYlGn_r'
+            
+            # Use the filtered df directly - shows actual data distribution
+            df_plot = df.copy() if color_metric != "Days Until Stockout" else df_plot
+            
+            fig = px.scatter(
+                df_plot,
+                x='LOCATION',
+                y='CATEGORY',
+                size='QUANTITY_ON_HAND',
+                color=color_col,
+                hover_data=['SKU_NAME', 'QUANTITY_ON_HAND', 'DAYS_UNTIL_STOCKOUT', 'STOCK_STATUS', 'RISK_SCORE'],
+                color_continuous_scale=color_scale,
+                title=f"Individual Items Distribution by {color_metric} ({len(df_plot)} items)"
+            )
+            
+            fig.update_layout(
+                height=500,
+                xaxis={'categoryorder': 'category ascending'},
+                yaxis={'categoryorder': 'category ascending'}
+            )
+            st.plotly_chart(fig, width="stretch")
     
-    # Create a matrix for heatmap
-    status_map = {'CRITICAL': 1, 'LOW': 2, 'MODERATE': 3, 'GOOD': 4}
-    df['status_value'] = df['stock_status'].map(status_map)
+    # Stock distribution
+    st.markdown("### 📊 Stock Distribution")
+    col1, col2 = st.columns(2)
     
-    # Pivot data
-    if pivot_col == 'category':
-        heatmap_data = df.pivot_table(
-            values='status_value',
-            index='item_name',
-            columns='location',
-            aggfunc='mean'
+    with col1:
+        status_counts = df['STOCK_STATUS'].value_counts()
+        fig = px.pie(
+            values=status_counts.values,
+            names=status_counts.index,
+            title="Items by Stock Status",
+            color=status_counts.index,
+            color_discrete_map={
+                'CRITICAL': '#f5576c',
+                'LOW': '#ffa500',
+                'MODERATE': '#ffeb3b',
+                'HEALTHY': '#4caf50'
+            }
         )
-    else:
-        heatmap_data = df.pivot_table(
-            values='status_value',
-            index='item_name',
-            columns='category',
-            aggfunc='mean'
+        st.plotly_chart(fig, width="stretch")
+    
+    with col2:
+        category_counts = df.groupby('CATEGORY')['STOCK_STATUS'].value_counts().unstack(fill_value=0)
+        fig = px.bar(
+            category_counts,
+            title="Stock Status by Category",
+            barmode='stack',
+            color_discrete_map={
+                'CRITICAL': '#f5576c',
+                'LOW': '#ffa500',
+                'MODERATE': '#ffeb3b',
+                'HEALTHY': '#4caf50'
+            }
         )
-    
-    # Create heatmap
-    fig = go.Figure(data=go.Heatmap(
-        z=heatmap_data.values,
-        x=heatmap_data.columns,
-        y=heatmap_data.index,
-        colorscale=[
-            [0, '#ff4b4b'],      # Critical
-            [0.33, '#ffa500'],   # Low
-            [0.66, '#ffeb3b'],   # Moderate
-            [1, '#4caf50']       # Good
-        ],
-        hovertemplate='<b>%{y}</b><br>%{x}<br>Status: %{z:.1f}<extra></extra>',
-        colorbar=dict(
-            title="Stock Status",
-            tickvals=[1, 2, 3, 4],
-            ticktext=['Critical', 'Low', 'Moderate', 'Good']
-        )
-    ))
-    
-    fig.update_layout(
-        title=f"Inventory Status Heatmap by {pivot_col.title()}",
-        xaxis_title=pivot_col.title(),
-        yaxis_title="Item",
-        height=600
-    )
-    
-    st.plotly_chart(fig, width="stretch")
-
-def display_percentage_heatmap(df, pivot_col):
-    """Display heatmap colored by stock percentage"""
-    
-    # Pivot data
-    if pivot_col == 'category':
-        heatmap_data = df.pivot_table(
-            values='stock_percentage',
-            index='item_name',
-            columns='location',
-            aggfunc='mean'
-        )
-    else:
-        heatmap_data = df.pivot_table(
-            values='stock_percentage',
-            index='item_name',
-            columns='category',
-            aggfunc='mean'
-        )
-    
-    # Create heatmap
-    fig = go.Figure(data=go.Heatmap(
-        z=heatmap_data.values,
-        x=heatmap_data.columns,
-        y=heatmap_data.index,
-        colorscale='RdYlGn',
-        hovertemplate='<b>%{y}</b><br>%{x}<br>Stock: %{z:.1f}%<extra></extra>',
-        colorbar=dict(title="Stock %")
-    ))
-    
-    fig.update_layout(
-        title=f"Stock Percentage Heatmap by {pivot_col.title()}",
-        xaxis_title=pivot_col.title(),
-        yaxis_title="Item",
-        height=600
-    )
-    
-    st.plotly_chart(fig, width="stretch")
-
-def display_stockout_heatmap(df, pivot_col):
-    """Display heatmap colored by days until stockout"""
-    
-    # Cap days at 30 for visualization
-    df['days_capped'] = df['days_until_stockout'].clip(upper=30)
-    
-    # Pivot data
-    if pivot_col == 'category':
-        heatmap_data = df.pivot_table(
-            values='days_capped',
-            index='item_name',
-            columns='location',
-            aggfunc='mean'
-        )
-    else:
-        heatmap_data = df.pivot_table(
-            values='days_capped',
-            index='item_name',
-            columns='category',
-            aggfunc='mean'
-        )
-    
-    # Create heatmap
-    fig = go.Figure(data=go.Heatmap(
-        z=heatmap_data.values,
-        x=heatmap_data.columns,
-        y=heatmap_data.index,
-        colorscale='RdYlGn',
-        hovertemplate='<b>%{y}</b><br>%{x}<br>Days: %{z:.1f}<extra></extra>',
-        colorbar=dict(title="Days to Stockout")
-    ))
-    
-    fig.update_layout(
-        title=f"Days Until Stockout Heatmap by {pivot_col.title()}",
-        xaxis_title=pivot_col.title(),
-        yaxis_title="Item",
-        height=600
-    )
-    
-    st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, width="stretch")

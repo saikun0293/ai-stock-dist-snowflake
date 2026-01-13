@@ -7,31 +7,188 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from prompts.auto_insights import build_inventory_insights_prompt
+from prompts.chat import (
+    build_sql_generation_prompt,
+    build_response_generation_prompt,
+    build_error_handling_prompt
+)
+
+
+def aggregate_inventory_data(conn, stock_df):
+    """
+    Aggregate inventory data using optimized Snowflake queries instead of pandas
+    This is much faster as computation happens in Snowflake's optimized engine
+    """
+    aggregated = {}
+    
+    # Single optimized query to get all summary statistics
+    summary_query = """
+    SELECT 
+        COUNT(DISTINCT SKU_ID) as total_items,
+        COUNT(DISTINCT LOCATION) as total_locations,
+        COUNT(DISTINCT CATEGORY) as total_categories,
+        ROUND(SUM(TOTAL_INVENTORY_VALUE_USD), 2) as total_value,
+        
+        -- Stock status breakdown
+        COUNT(CASE WHEN STOCK_STATUS = 'CRITICAL' THEN 1 END) as critical_count,
+        COUNT(CASE WHEN STOCK_STATUS = 'LOW' THEN 1 END) as low_count,
+        COUNT(CASE WHEN STOCK_STATUS = 'MODERATE' THEN 1 END) as moderate_count,
+        COUNT(CASE WHEN STOCK_STATUS = 'HEALTHY' THEN 1 END) as healthy_count,
+        
+        -- Critical timing
+        COUNT(CASE WHEN DAYS_UNTIL_STOCKOUT <= 3 THEN 1 END) as days_3_count,
+        COUNT(CASE WHEN DAYS_UNTIL_STOCKOUT <= 7 THEN 1 END) as days_7_count,
+        COUNT(CASE WHEN DAYS_UNTIL_STOCKOUT <= 14 THEN 1 END) as days_14_count,
+        ROUND(AVG(CASE WHEN DAYS_UNTIL_STOCKOUT < 999 THEN DAYS_UNTIL_STOCKOUT END), 1) as avg_days_to_stockout
+    FROM DT_STOCK_HEALTH
+    """
+    
+    summary_df = pd.read_sql(summary_query, conn).iloc[0]
+    
+    aggregated['total_items'] = int(summary_df['TOTAL_ITEMS'])
+    aggregated['total_locations'] = int(summary_df['TOTAL_LOCATIONS'])
+    aggregated['total_categories'] = int(summary_df['TOTAL_CATEGORIES'])
+    aggregated['total_value'] = float(summary_df['TOTAL_VALUE'])
+    
+    aggregated['stock_status_breakdown'] = {
+        'CRITICAL': int(summary_df['CRITICAL_COUNT']),
+        'LOW': int(summary_df['LOW_COUNT']),
+        'MODERATE': int(summary_df['MODERATE_COUNT']),
+        'HEALTHY': int(summary_df['HEALTHY_COUNT'])
+    }
+    
+    aggregated['critical_timing'] = {
+        '3_days': int(summary_df['DAYS_3_COUNT']),
+        '7_days': int(summary_df['DAYS_7_COUNT']),
+        '14_days': int(summary_df['DAYS_14_COUNT'])
+    }
+    aggregated['avg_days_to_stockout'] = float(summary_df['AVG_DAYS_TO_STOCKOUT']) if summary_df['AVG_DAYS_TO_STOCKOUT'] else 0
+    
+    # ABC analysis in one query
+    abc_query = """
+    SELECT 
+        ABC_CLASS,
+        COUNT(*) as count,
+        ROUND(SUM(TOTAL_INVENTORY_VALUE_USD), 2) as value,
+        COUNT(CASE WHEN STOCK_STATUS = 'CRITICAL' THEN 1 END) as critical_count
+    FROM DT_STOCK_HEALTH
+    GROUP BY ABC_CLASS
+    ORDER BY ABC_CLASS
+    """
+    abc_df = pd.read_sql(abc_query, conn)
+    aggregated['abc_analysis'] = {
+        row['ABC_CLASS']: {
+            'count': int(row['COUNT']),
+            'value': float(row['VALUE']),
+            'critical_count': int(row['CRITICAL_COUNT'])
+        }
+        for _, row in abc_df.iterrows()
+    }
+    
+    # Location breakdown in one query
+    location_query = """
+    SELECT 
+        LOCATION,
+        COUNT(CASE WHEN STOCK_STATUS = 'CRITICAL' THEN 1 END) as critical,
+        COUNT(CASE WHEN STOCK_STATUS = 'LOW' THEN 1 END) as low,
+        COUNT(CASE WHEN STOCK_STATUS = 'HEALTHY' THEN 1 END) as healthy
+    FROM DT_STOCK_HEALTH
+    GROUP BY LOCATION
+    ORDER BY critical DESC
+    LIMIT 10
+    """
+    location_df = pd.read_sql(location_query, conn)
+    aggregated['location_breakdown'] = [
+        {
+            'location': row['LOCATION'],
+            'critical': int(row['CRITICAL']),
+            'low': int(row['LOW']),
+            'healthy': int(row['HEALTHY'])
+        }
+        for _, row in location_df.iterrows()
+    ]
+    
+    # Category breakdown in one query
+    category_query = """
+    SELECT 
+        CATEGORY,
+        COUNT(CASE WHEN STOCK_STATUS = 'CRITICAL' THEN 1 END) as critical,
+        ROUND(AVG(RISK_SCORE), 1) as avg_risk
+    FROM DT_STOCK_HEALTH
+    GROUP BY CATEGORY
+    ORDER BY critical DESC
+    LIMIT 10
+    """
+    category_df = pd.read_sql(category_query, conn)
+    aggregated['category_breakdown'] = [
+        {
+            'category': row['CATEGORY'],
+            'critical': int(row['CRITICAL']),
+            'avg_risk': float(row['AVG_RISK'])
+        }
+        for _, row in category_df.iterrows()
+    ]
+    
+    # Reorder stats
+    try:
+        reorder_query = """
+        SELECT 
+            COUNT(*) as items_to_reorder,
+            SUM(CASE WHEN PRIORITY_SCORE >= 8 THEN 1 ELSE 0 END) as urgent_items,
+            ROUND(SUM(ESTIMATED_ORDER_VALUE_USD), 2) as total_order_value
+        FROM DT_REORDER_RECOMMENDATIONS
+        """
+        reorder_result = pd.read_sql(reorder_query, conn).iloc[0]
+        aggregated['reorder_stats'] = {
+            'items_to_reorder': int(reorder_result['ITEMS_TO_REORDER']) if reorder_result['ITEMS_TO_REORDER'] else 0,
+            'urgent_items': int(reorder_result['URGENT_ITEMS']) if reorder_result['URGENT_ITEMS'] else 0,
+            'total_order_value': float(reorder_result['TOTAL_ORDER_VALUE']) if reorder_result['TOTAL_ORDER_VALUE'] else 0
+        }
+    except Exception as e:
+        aggregated['reorder_stats'] = {
+            'items_to_reorder': 0,
+            'urgent_items': 0,
+            'total_order_value': 0
+        }
+    
+    # Top critical items
+    top_critical_query = """
+    SELECT 
+        SKU_NAME,
+        LOCATION,
+        CATEGORY,
+        QUANTITY_ON_HAND,
+        DAYS_UNTIL_STOCKOUT,
+        RISK_SCORE
+    FROM DT_STOCK_HEALTH
+    ORDER BY RISK_SCORE DESC
+    LIMIT 10
+    """
+    top_critical_df = pd.read_sql(top_critical_query, conn)
+    aggregated['top_critical_items'] = [
+        {
+            'name': row['SKU_NAME'],
+            'location': row['LOCATION'],
+            'category': row['CATEGORY'],
+            'qty': int(row['QUANTITY_ON_HAND']),
+            'days': float(row['DAYS_UNTIL_STOCKOUT']),
+            'risk': float(row['RISK_SCORE'])
+        }
+        for _, row in top_critical_df.iterrows()
+    ]
+    
+    return aggregated
+
 
 def get_inventory_insights(conn, stock_df):
-    """Generate AI insights using Cortex LLM"""
+    """Generate AI insights using Cortex LLM with comprehensive aggregated data"""
     try:
-        # Prepare summary statistics for context
-        critical_items = len(stock_df[stock_df['STOCK_STATUS'] == 'CRITICAL'])
-        total_value = stock_df['TOTAL_INVENTORY_VALUE_USD'].sum()
-        avg_days_stock = stock_df[stock_df['DAYS_UNTIL_STOCKOUT'] < 999]['DAYS_UNTIL_STOCKOUT'].mean()
+        # Aggregate data from all dynamic tables and views
+        aggregated_data = aggregate_inventory_data(conn, stock_df)
         
-        # Create context for LLM
-        context = f"""
-        Current Inventory Status:
-        - Total Items: {len(stock_df)}
-        - Critical Items: {critical_items}
-        - Total Inventory Value: ${total_value:,.2f}
-        - Average Days Until Stockout: {avg_days_stock:.1f}
-        - Categories: {stock_df['CATEGORY'].nunique()}
-        - Locations: {stock_df['LOCATION'].nunique()}
-        """
-        
-        prompt = f"""Based on this inventory data, provide 3 key actionable insights for supply chain managers:
-        
-{context}
-
-Provide concise, numbered insights focusing on immediate actions needed."""
+        # Build comprehensive prompt using centralized prompt builder
+        prompt = build_inventory_insights_prompt(aggregated_data)
         
         # Call Cortex COMPLETE function
         query = f"""
@@ -54,112 +211,13 @@ Provide concise, numbered insights focusing on immediate actions needed."""
         return None
 
 
-def detect_anomalies(conn):
-    """Detect anomalies in stock movements using Cortex"""
-    try:
-        query = """
-        WITH daily_changes AS (
-            SELECT 
-                SKU_ID,
-                SKU_NAME,
-                CATEGORY,
-                WAREHOUSE_LOCATION as LOCATION,
-                AUDIT_DATE,
-                QUANTITY_ON_HAND,
-                LAG(QUANTITY_ON_HAND) OVER (PARTITION BY SKU_ID ORDER BY AUDIT_DATE) as prev_qty,
-                QUANTITY_ON_HAND - LAG(QUANTITY_ON_HAND) OVER (PARTITION BY SKU_ID ORDER BY AUDIT_DATE) as qty_change
-            FROM inventory_cleaned
-            WHERE AUDIT_DATE >= DATEADD('day', -30, CURRENT_DATE())
-        ),
-        anomaly_detection AS (
-            SELECT 
-                SKU_ID,
-                SKU_NAME,
-                CATEGORY,
-                LOCATION,
-                AUDIT_DATE,
-                qty_change,
-                -- Use Cortex anomaly detection
-                CASE 
-                    WHEN ABS(qty_change) > (AVG(ABS(qty_change)) OVER (PARTITION BY SKU_ID) * 3) THEN TRUE
-                    ELSE FALSE
-                END as is_anomaly,
-                AVG(qty_change) OVER (PARTITION BY SKU_ID) as avg_change,
-                STDDEV(qty_change) OVER (PARTITION BY SKU_ID) as stddev_change
-            FROM daily_changes
-            WHERE qty_change IS NOT NULL
-        )
-        SELECT 
-            SKU_ID,
-            SKU_NAME,
-            CATEGORY,
-            LOCATION,
-            AUDIT_DATE,
-            qty_change,
-            ROUND(avg_change, 2) as avg_change,
-            ROUND(stddev_change, 2) as stddev_change
-        FROM anomaly_detection
-        WHERE is_anomaly = TRUE
-        ORDER BY AUDIT_DATE DESC, ABS(qty_change) DESC
-        LIMIT 50
-        """
-        
-        df = pd.read_sql(query, conn)
-        return df
-        
-    except Exception as e:
-        st.warning(f"Anomaly detection not available: {e}")
-        return pd.DataFrame()
-
-
-def forecast_demand_cortex(conn, sku_id=None):
-    """Generate demand forecast using Cortex ML"""
-    try:
-        # Get historical data for forecasting
-        where_clause = f"WHERE SKU_ID = '{sku_id}'" if sku_id else ""
-        
-        query = f"""
-        WITH historical_data AS (
-            SELECT 
-                SKU_ID,
-                SKU_NAME,
-                CATEGORY,
-                AUDIT_DATE,
-                QUANTITY_ON_HAND,
-                AVG_DAILY_SALES,
-                FORECAST_NEXT_30D
-            FROM inventory_cleaned
-            WHERE AUDIT_DATE >= DATEADD('day', -90, CURRENT_DATE())
-            {where_clause}
-            ORDER BY SKU_ID, AUDIT_DATE
-        )
-        SELECT 
-            SKU_ID,
-            SKU_NAME,
-            CATEGORY,
-            AVG(AVG_DAILY_SALES) as avg_daily_demand,
-            STDDEV(AVG_DAILY_SALES) as demand_volatility,
-            MAX(FORECAST_NEXT_30D) as forecast_30d,
-            COUNT(*) as data_points
-        FROM historical_data
-        GROUP BY SKU_ID, SKU_NAME, CATEGORY
-        HAVING COUNT(*) >= 7
-        ORDER BY demand_volatility DESC
-        LIMIT 20
-        """
-        
-        df = pd.read_sql(query, conn)
-        return df
-        
-    except Exception as e:
-        st.warning(f"Forecasting not available: {e}")
-        return pd.DataFrame()
-
-
 def cortex_chat_interface(conn, stock_df):
-    """Interactive chat interface using Cortex LLM"""
-    st.markdown("### 💬 Ask AI About Your Inventory")
-    st.markdown("*Powered by Snowflake Cortex - Ask questions in natural language*")
+    """Multi-Agent Interactive chat interface using Cortex LLM
+    
+    Agent 1: Converts natural language to SQL query
+    Agent 2: Executes SQL and converts results to natural language response
+    """
+    st.markdown("*Ask AI About Your Inventory - Powered by Multi-Agent System*")
     
     # Sample questions
     with st.expander("📝 Example Questions"):
@@ -169,238 +227,186 @@ def cortex_chat_interface(conn, stock_df):
         - Which categories need immediate attention?
         - Show me items with less than 3 days of stock
         - What's the total value of critical items?
+        - Which suppliers have the best on-time delivery?
+        - How many items need reordering this week?
+        - Show me all Class A items that are low on stock
         """)
     
     # Chat input
     user_question = st.text_input(
         "Ask a question about your inventory:",
-        placeholder="e.g., Which items in Mumbai need urgent reorder?"
+        placeholder="e.g., What's the total value of critical items?"
     )
     
     if user_question:
-        with st.spinner("🤖 AI is analyzing your inventory..."):
+        # Initialize session state for showing SQL query
+        if 'show_sql' not in st.session_state:
+            st.session_state.show_sql = False
+        
+        with st.spinner("🤖 Agent 1: Converting your question to SQL..."):
             try:
-                # Prepare data context
-                critical_df = stock_df[stock_df['STOCK_STATUS'] == 'CRITICAL'].head(10)
+                # AGENT 1: Generate SQL query from natural language
+                sql_prompt = build_sql_generation_prompt(user_question)
                 
-                data_summary = f"""
-                Total Items: {len(stock_df)}
-                Critical Items: {len(stock_df[stock_df['STOCK_STATUS'] == 'CRITICAL'])}
-                Low Stock Items: {len(stock_df[stock_df['STOCK_STATUS'] == 'LOW'])}
-                Locations: {', '.join(stock_df['LOCATION'].unique()[:5])}
-                Categories: {', '.join(stock_df['CATEGORY'].unique()[:5])}
-                
-                Sample Critical Items:
-                {critical_df[['SKU_NAME', 'LOCATION', 'CATEGORY', 'QUANTITY_ON_HAND', 'REORDER_POINT']].to_string(index=False)}
-                """
-                
-                prompt = f"""You are an inventory management AI assistant. Answer this question based on the data:
-
-                Question: {user_question}
-
-                Current Inventory Data:
-                {data_summary}
-
-                Provide a clear, concise answer with specific numbers and actionable recommendations."""
-                
-                # Call Cortex
-                query = f"""
+                sql_query_result = f"""
                 SELECT SNOWFLAKE.CORTEX.COMPLETE(
                     'mistral-large',
-                    '{prompt.replace("'", "''")}'
-                ) as response
+                    '{sql_prompt.replace("'", "''")}'
+                ) as sql_query
                 """
                 
                 cursor = conn.cursor()
-                cursor.execute(query)
-                result = cursor.fetchone()
+                cursor.execute(sql_query_result)
+                sql_result = cursor.fetchone()
                 
-                if result:
-                    st.markdown("#### 🤖 AI Response:")
-                    st.markdown(result[0])
+                if not sql_result or not sql_result[0]:
+                    st.error("❌ Failed to generate SQL query. Please rephrase your question.")
+                    return
+                
+                # Extract the SQL query
+                generated_sql = sql_result[0].strip()
+                
+                # Clean up the SQL (remove markdown formatting if present)
+                if generated_sql.startswith("```"):
+                    generated_sql = generated_sql.split("```")[1]
+                    if generated_sql.startswith("sql"):
+                        generated_sql = generated_sql[3:]
+                generated_sql = generated_sql.strip()
+                
+                # Show SQL query in expander
+                with st.expander("🔍 View Generated SQL Query"):
+                    st.code(generated_sql, language="sql")
+                
+                # AGENT 2: Execute SQL and generate natural language response
+                with st.spinner("🤖 Agent 2: Executing query and analyzing results..."):
+                    try:
+                        # Execute the generated SQL
+                        query_df = pd.read_sql(generated_sql, conn)
+                        row_count = len(query_df)
+                        
+                        # Convert results to string format for LLM
+                        if row_count == 0:
+                            sql_results_str = "No results found."
+                        elif row_count <= 20:
+                            # Show all results for small datasets
+                            sql_results_str = query_df.to_string(index=False)
+                        else:
+                            # Show first 20 rows for large datasets
+                            sql_results_str = query_df.head(20).to_string(index=False)
+                            sql_results_str += f"\n... and {row_count - 20} more rows"
+                        
+                        # Generate natural language response
+                        response_prompt = build_response_generation_prompt(
+                            user_question,
+                            generated_sql,
+                            sql_results_str,
+                            row_count
+                        )
+                        
+                        response_query = f"""
+                        SELECT SNOWFLAKE.CORTEX.COMPLETE(
+                            'mistral-large',
+                            '{response_prompt.replace("'", "''")}'
+                        ) as response
+                        """
+                        
+                        cursor.execute(response_query)
+                        response_result = cursor.fetchone()
+                        
+                        if response_result:
+                            st.markdown("#### 🤖 AI Response:")
+                            st.markdown(response_result[0])
+                            
+                            # Show raw data in expander
+                            if row_count > 0:
+                                with st.expander(f"📊 View Raw Data ({row_count} rows)"):
+                                    st.dataframe(query_df, use_container_width=True)
+                        
+                    except Exception as sql_error:
+                        # Handle SQL execution errors with Agent 2
+                        error_message = str(sql_error)
+                        st.error(f"❌ Query execution failed")
+                        
+                        with st.spinner("🤖 Analyzing error..."):
+                            error_prompt = build_error_handling_prompt(
+                                user_question,
+                                generated_sql,
+                                error_message
+                            )
+                            
+                            error_response_query = f"""
+                            SELECT SNOWFLAKE.CORTEX.COMPLETE(
+                                'mistral-large',
+                                '{error_prompt.replace("'", "''")}'
+                            ) as error_response
+                            """
+                            
+                            cursor.execute(error_response_query)
+                            error_response = cursor.fetchone()
+                            
+                            if error_response:
+                                st.info(error_response[0])
+                            
+                            with st.expander("🐛 Technical Error Details"):
+                                st.code(error_message)
                     
             except Exception as e:
-                st.error(f"Error: {e}")
-                st.info("💡 Try using the pre-built insights below instead.")
+                st.error(f"❌ An error occurred: {e}")
+                st.info("💡 Try using the pre-built insights or rephrase your question.")
 
 
-def display_cortex_features(conn, stock_df, alerts_df):
-    """Main Cortex AI tab with all features"""
-    st.markdown("## 🧠 AI-Powered Insights")
-    st.markdown("*Leveraging Snowflake Cortex for intelligent inventory analysis*")
+def display_cortex_features(conn, stock_df):
+    """Main Cortex AI tab with LLM features"""
+    st.markdown("## 🧠 Snowflake Cortex AI")
     
-    # Feature selector
     feature = st.radio(
-        "Choose AI Feature:",
-        ["💬 Chat with AI", "🔍 Anomaly Detection", "📈 Demand Forecasting", "💡 Auto Insights"],
+        "Choose Feature:",
+        ["💬 Chat with AI", "💡 Auto-Generated Insights"],
         horizontal=True
     )
     
-    st.markdown("---")
-    
     if feature == "💬 Chat with AI":
         cortex_chat_interface(conn, stock_df)
-        
-    elif feature == "🔍 Anomaly Detection":
-        st.markdown("### 🔍 Inventory Anomaly Detection")
-        st.markdown("*Unusual patterns in stock movements detected by AI*")
-        
-        anomalies_df = detect_anomalies(conn)
-        
-        if len(anomalies_df) > 0:
-            col1, col2, col3 = st.columns(3)
             
-            with col1:
-                st.metric("🚨 Anomalies Detected", len(anomalies_df))
-            with col2:
-                st.metric("📍 Locations Affected", anomalies_df['LOCATION'].nunique())
-            with col3:
-                st.metric("📦 Categories Affected", anomalies_df['CATEGORY'].nunique())
-            
-            st.markdown("#### Recent Anomalies")
-            
-            # Display anomalies
-            for idx, row in anomalies_df.head(10).iterrows():
-                change_type = "spike" if row['QTY_CHANGE'] > 0 else "drop"
-                color = "#dc2626" if row['QTY_CHANGE'] < 0 else "#059669"
-                
-                st.markdown(f"""
-                <div style="background: linear-gradient(135deg, {color}22 0%, {color}11 100%); 
-                            padding: 12px; border-radius: 8px; margin: 8px 0;
-                            border-left: 4px solid {color};">
-                    <h4 style="margin: 0; color: {color};">
-                        {'📉' if row['QTY_CHANGE'] < 0 else '📈'} {row['SKU_NAME']}
-                    </h4>
-                    <p style="margin: 6px 0; font-size: 0.9rem;">
-                        <b>{row['LOCATION']}</b> • {row['CATEGORY']} • 
-                        Date: {row['AUDIT_DATE'].strftime('%Y-%m-%d') if hasattr(row['AUDIT_DATE'], 'strftime') else row['AUDIT_DATE']}
-                    </p>
-                    <p style="margin: 4px 0; font-size: 0.9rem;">
-                        Unusual {change_type}: <b>{abs(row['QTY_CHANGE']):.0f} units</b> 
-                        (Avg: {row['AVG_CHANGE']:.1f}, StdDev: {row['STDDEV_CHANGE']:.1f})
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.success("✅ No significant anomalies detected in the last 30 days!")
-            
-    elif feature == "📈 Demand Forecasting":
-        st.markdown("### 📈 AI Demand Forecasting")
-        st.markdown("*Predict future demand patterns using historical data*")
-        
-        forecast_df = forecast_demand_cortex(conn)
-        
-        if len(forecast_df) > 0:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Volatility chart
-                fig = px.bar(
-                    forecast_df.head(15),
-                    x='SKU_NAME',
-                    y='DEMAND_VOLATILITY',
-                    color='DEMAND_VOLATILITY',
-                    title="Items with Highest Demand Volatility",
-                    color_continuous_scale='Reds',
-                    labels={'DEMAND_VOLATILITY': 'Volatility', 'SKU_NAME': 'Item'}
-                )
-                fig.update_xaxes(tickangle=45)
-                st.plotly_chart(fig, width="stretch")
-            
-            with col2:
-                # Forecast comparison
-                fig = go.Figure()
-                
-                top_items = forecast_df.head(10)
-                
-                fig.add_trace(go.Bar(
-                    x=top_items['SKU_NAME'],
-                    y=top_items['AVG_DAILY_DEMAND'],
-                    name='Current Avg Demand',
-                    marker_color='lightblue'
-                ))
-                
-                fig.add_trace(go.Bar(
-                    x=top_items['SKU_NAME'],
-                    y=top_items['FORECAST_30D'] / 30,
-                    name='Forecasted Daily Demand',
-                    marker_color='darkblue'
-                ))
-                
-                fig.update_layout(
-                    title="Current vs Forecasted Demand",
-                    barmode='group',
-                    xaxis_tickangle=45
-                )
-                
-                st.plotly_chart(fig, width="stretch")
-            
-            # Data table
-            st.markdown("#### 📊 Forecast Details")
-            display_df = forecast_df[['SKU_NAME', 'CATEGORY', 'AVG_DAILY_DEMAND', 'DEMAND_VOLATILITY', 'FORECAST_30D', 'DATA_POINTS']].copy()
-            display_df['AVG_DAILY_DEMAND'] = display_df['AVG_DAILY_DEMAND'].round(2)
-            display_df['DEMAND_VOLATILITY'] = display_df['DEMAND_VOLATILITY'].round(2)
-            display_df['FORECAST_30D'] = display_df['FORECAST_30D'].round(0)
-            
-            st.dataframe(display_df, use_container_width=True)
-        else:
-            st.info("📊 Insufficient historical data for forecasting. Need at least 7 days of data per item.")
-            
-    else:  # Auto Insights
+    else:
         st.markdown("### 💡 AI-Generated Insights")
-        st.markdown("*Automated analysis powered by Cortex LLM*")
+        st.markdown("*Comprehensive automated analysis from all inventory data sources*")
         
-        with st.spinner("🤖 AI is analyzing your inventory data..."):
+        with st.spinner("🧠 AI is analyzing aggregated data from all dynamic tables..."):
             insights = get_inventory_insights(conn, stock_df)
             
             if insights:
-                st.markdown("#### 📊 Key Findings:")
                 st.markdown(insights)
+                
+                # Show comprehensive data context
+                aggregated_data = aggregate_inventory_data(conn, stock_df)
+                
+                with st.expander("📊 View Comprehensive Data Context Used for Analysis"):
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total Items", aggregated_data['total_items'])
+                        st.metric("Critical Items", aggregated_data['stock_status_breakdown']['CRITICAL'])
+                    with col2:
+                        st.metric("Total Locations", aggregated_data['total_locations'])
+                        st.metric("Low Stock Items", aggregated_data['stock_status_breakdown']['LOW'])
+                    with col3:
+                        st.metric("Total Categories", aggregated_data['total_categories'])
+                        st.metric("Healthy Items", aggregated_data['stock_status_breakdown']['HEALTHY'])
+                    with col4:
+                        st.metric("Total Value", f"${aggregated_data['total_value']:,.0f}")
+                        st.metric("Items to Reorder", aggregated_data['reorder_stats']['items_to_reorder'])
+                    
+                    st.markdown("##### ABC Classification Analysis")
+                    abc_cols = st.columns(3)
+                    for i, (abc_class, data) in enumerate(aggregated_data['abc_analysis'].items()):
+                        with abc_cols[i]:
+                            st.markdown(f"**Class {abc_class}**")
+                            st.write(f"Items: {data['count']}")
+                            st.write(f"Value: ${data['value']:,.0f}")
+                            st.write(f"Critical: {data['critical_count']}")
+                    
+                    st.markdown("##### Top 5 Critical Items by Risk Score")
+                    for item in aggregated_data['top_critical_items'][:5]:
+                        st.markdown(f"- **{item['name']}** ({item['location']}, {item['category']}) - Qty: {item['qty']}, Days: {item['days']:.1f}, Risk: {item['risk']:.1f}")
             else:
-                st.warning("Could not generate insights. Using fallback analysis...")
-                
-                # Fallback insights
-                st.markdown("#### 📊 Key Findings:")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("##### 🚨 Critical Issues")
-                    critical_count = len(stock_df[stock_df['STOCK_STATUS'] == 'CRITICAL'])
-                    critical_value = stock_df[stock_df['STOCK_STATUS'] == 'CRITICAL']['TOTAL_INVENTORY_VALUE_USD'].sum()
-                    
-                    st.markdown(f"""
-                    - **{critical_count} items** in critical status
-                    - **${critical_value:,.0f}** at risk inventory value
-                    - Immediate action required for top {min(10, critical_count)} items
-                    """)
-                    
-                with col2:
-                    st.markdown("##### 📈 Recommendations")
-                    top_categories = stock_df[stock_df['STOCK_STATUS'] == 'CRITICAL'].groupby('CATEGORY').size().sort_values(ascending=False).head(3)
-                    
-                    st.markdown("**Priority Categories:**")
-                    for cat, count in top_categories.items():
-                        st.markdown(f"- {cat}: {count} critical items")
-        
-        # Additional metrics
-        st.markdown("---")
-        st.markdown("#### 📊 Quick Stats")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            abc_a = len(stock_df[stock_df['ABC_CLASS'] == 'A'])
-            st.metric("Class A Items", abc_a)
-            
-        with col2:
-            low_days = len(stock_df[stock_df['DAYS_UNTIL_STOCKOUT'] <= 3])
-            st.metric("< 3 Days Stock", low_days)
-            
-        with col3:
-            avg_risk = stock_df['RISK_SCORE'].mean()
-            st.metric("Avg Risk Score", f"{avg_risk:.0f}")
-            
-        with col4:
-            total_locations = stock_df['LOCATION'].nunique()
-            st.metric("Total Locations", total_locations)
+                st.warning("Unable to generate insights at this time")
