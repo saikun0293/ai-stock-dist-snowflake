@@ -6,19 +6,76 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+import numpy as np
+
+
+def generate_forecast_data(df, forecast_horizon_days=14):
+    
+    forecast_data = []
+    
+    for idx, row in df.iterrows():
+        current_stock = row.get('QUANTITY_ON_HAND', 0)
+        daily_sales = row.get('AVG_DAILY_SALES', 5)
+        safety_stock = row.get('SAFETY_STOCK', 0)
+        
+        if daily_sales <= 0:
+            daily_sales = 1
+        
+        demand_volatility = min(0.3, max(0.1, (current_stock / (daily_sales * 30)) * 0.05)) if daily_sales > 0 else 0.15
+        
+        std_dev = daily_sales * demand_volatility
+        simulated_daily_demands = np.random.normal(daily_sales, std_dev, forecast_horizon_days)
+        simulated_daily_demands = np.maximum(simulated_daily_demands, 0)
+        
+        total_forecasted_demand = simulated_daily_demands.sum()
+        avg_forecasted_daily_demand = simulated_daily_demands.mean()
+        
+        predicted_stock = max(0, current_stock - total_forecasted_demand)
+        
+        days_to_stockout = current_stock / avg_forecasted_daily_demand if avg_forecasted_daily_demand > 0 else 999
+        
+        base_accuracy = 85
+        volatility_penalty = demand_volatility * 50
+        low_stock_penalty = 10 if current_stock < safety_stock else 0
+        model_accuracy = max(60, min(95, base_accuracy - volatility_penalty - low_stock_penalty))
+        
+        confidence_interval_lower = avg_forecasted_daily_demand * 0.85
+        confidence_interval_upper = avg_forecasted_daily_demand * 1.15
+        
+        if days_to_stockout < 7:
+            stockout_risk = 'HIGH RISK'
+        elif days_to_stockout < 14:
+            stockout_risk = 'MODERATE RISK'
+        else:
+            stockout_risk = 'LOW RISK'
+        
+        forecast_data.append({
+            'item_name': row.get('SKU_NAME', 'Unknown'),
+            'sku_id': row.get('SKU_ID', ''),
+            'location': row.get('LOCATION', 'Unknown'),
+            'category': row.get('CATEGORY', 'Unknown'),
+            'current_stock': float(current_stock),
+            'predicted_stock': float(predicted_stock),
+            'predicted_consumption': float(avg_forecasted_daily_demand),
+            'predicted_days_to_stockout': float(days_to_stockout),
+            'model_accuracy': float(model_accuracy),
+            'forecast_horizon_days': forecast_horizon_days,
+            'confidence_interval_lower': float(confidence_interval_lower),
+            'confidence_interval_upper': float(confidence_interval_upper),
+            'stockout_risk': stockout_risk,
+            'demand_volatility': float(demand_volatility)
+        })
+    
+    return pd.DataFrame(forecast_data)
+
 
 def display_forecasts(forecast_df, inventory_df):
-    """Display AI-powered forecast predictions"""
     
-    st.markdown("## 📈 AI-Powered Demand Forecasting")
-    st.markdown("**Predict future stock levels and consumption patterns using historical data**")
-    
+    st.markdown("## 📈 Demand Forecasting & Stockout Prediction")
+
     if forecast_df is None or len(forecast_df) == 0:
         st.warning("📊 No forecast data available.")
-        st.info("💡 Forecast data can be generated using historical consumption patterns and Snowflake Cortex ML functions.")
         return
-    
-    st.markdown("---")
     
     # Forecast summary
     col1, col2, col3, col4 = st.columns(4)
@@ -38,8 +95,6 @@ def display_forecasts(forecast_df, inventory_df):
     with col4:
         avg_accuracy = forecast_df['model_accuracy'].mean()
         st.metric("🎯 Avg Model Accuracy", f"{avg_accuracy:.1f}%")
-    
-    st.markdown("---")
     
     # Risk distribution
     col1, col2 = st.columns(2)
@@ -87,6 +142,25 @@ def display_forecasts(forecast_df, inventory_df):
     high_risk_items = forecast_df[forecast_df['stockout_risk'] == 'HIGH RISK'].sort_values('predicted_days_to_stockout')
     
     if len(high_risk_items) > 0:
+        search_term = st.text_input(
+            "🔍 Search by item name",
+            placeholder="Type to filter items...",
+            key="high_risk_search"
+        )
+        
+        if search_term:
+            high_risk_items = high_risk_items[
+                high_risk_items['item_name'].str.contains(search_term, case=False, na=False)
+            ]
+        
+        high_risk_items = high_risk_items.head(10)
+        
+        if len(high_risk_items) == 0:
+            st.info("No items match your search criteria")
+        else:
+            st.caption(f"Showing {len(high_risk_items)} items")
+        
+    if len(high_risk_items) > 0:
         for _, item in high_risk_items.iterrows():
             with st.expander(f"🔴 {item['item_name']} - {item['location']}"):
                 col1, col2, col3 = st.columns(3)
@@ -110,6 +184,7 @@ def display_forecasts(forecast_df, inventory_df):
         st.success("✅ No high-risk items predicted!")
     
     # Prediction vs Current comparison
+    st.markdown("---")
     st.subheader("📊 Current vs Predicted Stock Levels")
     
     # Select items to display

@@ -5,11 +5,6 @@ AI-Powered Stock Management for Hospitals, NGOs & Distribution Systems
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import numpy as np
-from io import BytesIO
 import logging
 
 # Configure page
@@ -165,48 +160,6 @@ def load_data_from_snowflake():
         return stock_df, alerts_df, reorder_df, location_df, heatmap_df, conn
     return None, None, None, None, None, None
 
-def generate_forecast_data(df):
-    """Generate forecast data from inventory dataframe"""
-    import random
-    
-    forecast_data = []
-    # Use all filtered items for accurate forecasting
-    for idx, row in df.iterrows():
-        current_stock = row.get('QUANTITY_ON_HAND', 0)
-        daily_sales = row.get('AVG_DAILY_SALES', 5)
-        
-        # Add more variation to make graphs interesting
-        daily_sales_variance = daily_sales * random.uniform(0.7, 1.5)
-        predicted_consumption = daily_sales_variance * random.uniform(0.8, 1.3)
-        
-        # More varied predictions
-        days_variance = random.randint(10, 18)
-        predicted_stock = max(0, current_stock - (predicted_consumption * days_variance))
-        days_to_stockout = current_stock / predicted_consumption if predicted_consumption > 0 else 999
-        
-        # Vary model accuracy based on item characteristics
-        base_accuracy = random.uniform(70, 98)
-        accuracy_modifier = -5 if current_stock < 50 else 0
-        model_accuracy = max(65, base_accuracy + accuracy_modifier)
-        
-        forecast_data.append({
-            'item_name': row.get('SKU_NAME', 'Unknown'),
-            'sku_id': row.get('SKU_ID', ''),
-            'location': row.get('LOCATION', 'Unknown'),
-            'category': row.get('CATEGORY', 'Unknown'),
-            'current_stock': float(current_stock),
-            'predicted_stock': float(predicted_stock),
-            'predicted_consumption': float(predicted_consumption),
-            'predicted_days_to_stockout': float(days_to_stockout),
-            'model_accuracy': float(model_accuracy),
-            'forecast_horizon_days': 14,
-            'confidence_interval_lower': float(predicted_consumption * 0.85),
-            'confidence_interval_upper': float(predicted_consumption * 1.15),
-            'stockout_risk': 'HIGH RISK' if days_to_stockout < 5 else 'MODERATE RISK' if days_to_stockout < 10 else 'LOW RISK'
-        })
-    
-    return pd.DataFrame(forecast_data)
-
 def generate_trends_data(df):
     """Generate time series data for trends analysis"""
     from datetime import datetime, timedelta
@@ -357,15 +310,15 @@ def main():
     
     with col1:
         critical_count = len(filtered_df[filtered_df['STOCK_STATUS'] == 'CRITICAL'])
-        st.metric("🔴 Critical Items", critical_count, delta=f"-{critical_count} urgent", delta_color="inverse")
+        st.metric("🔴 Critical Items", critical_count)
     
     with col2:
         low_count = len(filtered_df[filtered_df['STOCK_STATUS'] == 'LOW'])
-        st.metric("🟡 Low Stock", low_count, delta=f"{low_count} need attention")
+        st.metric("🟡 Low Stock", low_count)
     
     with col3:
         avg_days = filtered_df[filtered_df['DAYS_UNTIL_STOCKOUT'] < 999]['DAYS_UNTIL_STOCKOUT'].mean()
-        st.metric("📅 Avg Days to Stockout", f"{avg_days:.1f}", delta=f"Monitor closely")
+        st.metric("📅 Avg Days to Stockout", f"{avg_days:.1f}", delta=f"Monitor closely", delta_color="inverse")
     
     with col4:
         total_value = filtered_df['QUANTITY_ON_HAND'].sum() * filtered_df['UNIT_COST_USD'].mean()
@@ -421,8 +374,7 @@ def main():
         display_analytics(filtered_df, location_df)
     
     with tab5:
-        # Forecasting tab
-        from components.forecasting import display_forecasts
+        from components.forecasting import display_forecasts, generate_forecast_data
         forecast_df = generate_forecast_data(filtered_df)
         display_forecasts(forecast_df, filtered_df)
     
