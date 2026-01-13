@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import numpy as np
 from io import BytesIO
+import logging
 
 # Configure page
 st.set_page_config(
@@ -309,7 +310,9 @@ def main():
         with st.spinner("🔄 Loading inventory data..."):
             if USE_SNOWFLAKE:
                 stock_df, alerts_df, reorder_df, location_df, heatmap_df, conn = load_data_from_snowflake()
+                logging.info(f"Successfully loaded data from Snowflake - USE_SNOWFLAKE={USE_SNOWFLAKE}")
                 if stock_df is None:
+                    logging.info("Falling back to demo data due to failed Snowflake data load.")
                     stock_df, alerts_df, reorder_df, location_df, heatmap_df, conn = load_demo_data()
             else:
                 stock_df, alerts_df, reorder_df, location_df, heatmap_df, conn = load_demo_data()
@@ -400,6 +403,7 @@ def main():
         filtered_heatmap_df = filtered_heatmap_df[filtered_heatmap_df['CATEGORY'] == selected_category]
     
     with tab1:
+        from components.heatmap import display_heatmap
         display_heatmap(filtered_df, filtered_heatmap_df)
     
     with tab2:
@@ -431,107 +435,6 @@ def main():
             st.warning("⚠️ Snowflake connection required for AI features. Connect to Snowflake to enable.")
             st.info("💡 AI features include: Natural Language Chat, Anomaly Detection, Demand Forecasting, and Auto-Generated Insights.")
 
-
-def display_heatmap(df, heatmap_df):
-    """Display interactive heatmap"""
-    st.markdown("## 🗺️ Inventory Health Heatmap")
-    st.markdown("**Visual overview of stock levels across locations and categories**")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col2:
-        view_mode = st.radio("View By", ["Location x Category", "Individual Items"])
-        color_metric = st.selectbox("Color By", ["Risk Score", "Stock Status", "Days Until Stockout"])
-    
-    with col1:
-        if view_mode == "Location x Category":
-            # Aggregate heatmap
-            if 'AVG_RISK_SCORE' in heatmap_df.columns:
-                pivot_df = heatmap_df.pivot_table(
-                    values='AVG_RISK_SCORE',
-                    index='CATEGORY',
-                    columns='LOCATION',
-                    aggfunc='mean'
-                )
-            else:
-                pivot_df = df.pivot_table(
-                    values='RISK_SCORE',
-                    index='CATEGORY',
-                    columns='LOCATION',
-                    aggfunc='mean'
-                )
-            
-            fig = go.Figure(data=go.Heatmap(
-                z=pivot_df.values,
-                x=pivot_df.columns,
-                y=pivot_df.index,
-                colorscale='RdYlGn_r',
-                text=pivot_df.values.round(1),
-                texttemplate='%{text}',
-                textfont={"size": 12},
-                colorbar=dict(title="Risk Score")
-            ))
-            
-            fig.update_layout(
-                title="Stock Health by Location & Category",
-                xaxis_title="Location",
-                yaxis_title="Category",
-                height=500,
-                font=dict(size=12)
-            )
-            
-            st.plotly_chart(fig, width="stretch")
-        
-        else:
-            # Individual items scatter
-            fig = px.scatter(
-                df.head(200),
-                x='LOCATION',
-                y='CATEGORY',
-                size='QUANTITY_ON_HAND',
-                color='RISK_SCORE',
-                hover_data=['SKU_NAME', 'QUANTITY_ON_HAND', 'DAYS_UNTIL_STOCKOUT'],
-                color_continuous_scale='RdYlGn_r',
-                title="Item-Level Stock Health"
-            )
-            
-            fig.update_layout(height=500)
-            st.plotly_chart(fig, width="stretch")
-    
-    # Stock distribution
-    st.markdown("### 📊 Stock Distribution")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        status_counts = df['STOCK_STATUS'].value_counts()
-        fig = px.pie(
-            values=status_counts.values,
-            names=status_counts.index,
-            title="Items by Stock Status",
-            color=status_counts.index,
-            color_discrete_map={
-                'CRITICAL': '#f5576c',
-                'LOW': '#ffa500',
-                'MODERATE': '#ffeb3b',
-                'HEALTHY': '#4caf50'
-            }
-        )
-        st.plotly_chart(fig, width="stretch")
-    
-    with col2:
-        category_counts = df.groupby('CATEGORY')['STOCK_STATUS'].value_counts().unstack(fill_value=0)
-        fig = px.bar(
-            category_counts,
-            title="Stock Status by Category",
-            barmode='stack',
-            color_discrete_map={
-                'CRITICAL': '#f5576c',
-                'LOW': '#ffa500',
-                'MODERATE': '#ffeb3b',
-                'HEALTHY': '#4caf50'
-            }
-        )
-        st.plotly_chart(fig, width="stretch")
 
 def display_alerts(alerts_df):
     """Display active alerts"""

@@ -49,6 +49,10 @@ def get_connection():
         cursor = conn.cursor()
         cursor.execute("SELECT CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_WAREHOUSE()")
         result = cursor.fetchone()
+        if result:
+            logger.info(f"Connected to - Database: {result[0]}, Schema: {result[1]}, Warehouse: {result[2]}")
+        else:
+            logger.warning("Could not retrieve connection details")
         cursor.close()
         
         return conn
