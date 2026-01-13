@@ -328,8 +328,6 @@ def main():
         health_score = 100 - (critical_count + low_count) / len(filtered_df) * 100 if len(filtered_df) > 0 else 0
         st.metric("❤️ Overall Health Score", f"{health_score:.0f}%", delta=f"{health_score:.0f}% healthy")
     
-    st.markdown("---")
-    
     # Tab Navigation
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "🗺️ Heatmap View", 
