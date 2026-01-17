@@ -1,5 +1,9 @@
 # AI-Powered Inventory Management System
 
+> Disclaimer: Mostly vibecoded but reviewed!
+
+<br/>
+
 <img width="1901" height="943" alt="image" src="https://github.com/user-attachments/assets/4db42df3-7f3d-45b4-b676-07b0f468a10d" />
 <img width="1907" height="942" alt="image" src="https://github.com/user-attachments/assets/2c3b270d-5b50-48f8-9395-5a5fbaa9bc0a" />
 <img width="1894" height="919" alt="image" src="https://github.com/user-attachments/assets/a806210c-ce87-48ab-87b1-7bb2ebd868f5" />
